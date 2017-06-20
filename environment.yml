@@ -1,0 +1,39 @@
+name: OCR
+channels:
+- menpo
+- Atanahel
+dependencies:
+- freetype=2.5.5=1
+- jbig=2.1=0
+- jpeg=8d=0
+- libgfortran=3.0.0=1
+- libpng=1.6.22=0
+- libraw=0.17.2=2
+- libtiff=4.0.6=1
+- mkl=11.3.3=0
+- numpy=1.10.4=py35_2
+- opencv3=3.1.0=py35_0
+- openssl=1.0.2h=1
+- pillow=3.2.0=py35_0
+- pip=8.1.2=py35_0
+- python=3.5.1=0
+- rawkit=0.5.0=py35_2
+- readline=6.2=2
+- requests=2.10.0=py35_0
+- scipy=0.17.1=np110py35_0
+- setuptools=22.0.5=py35_0
+- sqlite=3.13.0=0
+- tk=8.5.18=0
+- wheel=0.29.0=py35_0
+- xz=5.0.5=1
+- zlib=1.2.8=3
+- pip:
+  - click==6.6
+  - dominate==2.2.0
+  - future==0.15.2
+  - jsonpickle==0.9.3
+  - kraken==0.7.6
+  - protobuf==3.0.0a3
+  - pytesseract==0.1.6
+  - regex==2016.6.5
+  - zbarlight==1.0.0
