@@ -10,7 +10,7 @@ apply gradients.
 """
 
 import tensorflow as tf
-from Model import upsample
+import upsample
 
 
 def inference(images, filter_size, skip, num_clases):
