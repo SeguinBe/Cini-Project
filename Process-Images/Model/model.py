@@ -10,7 +10,8 @@ apply gradients.
 """
 
 import tensorflow as tf
-from upsample import upsample_layer
+from Model import upsample
+
 
 def inference(images, filter_size, skip, num_clases):
 
@@ -106,7 +107,7 @@ def inference(images, filter_size, skip, num_clases):
 
     pool4 = tf.layers.max_pooling2d(inputs=conv4_2, pool_size=[2, 2], strides=2, name="pool_4")
 
-    up_sample_1 = upsample_layer(inputs=pool4, channels_in=256, channels_out=256, factor=2, name="up_sample_1")
+    up_sample_1 = upsample.upsample_layer(inputs=pool4, channels_in=256, channels_out=256, factor=2, name="up_sample_1")
 
     if skip == 3:
         skip_1 = tf.concat([up_sample_1, pool3], 3)
@@ -130,7 +131,7 @@ def inference(images, filter_size, skip, num_clases):
         activation=tf.nn.relu,
         name="conv5_2")
 
-    up_sample_2 = upsample_layer(inputs=conv5_2, channels_in=256, channels_out=256, factor=2, name="up_sample_2")
+    up_sample_2 = upsample.upsample_layer(inputs=conv5_2, channels_in=256, channels_out=256, factor=2, name="up_sample_2")
 
     if skip:
         skip_2 = tf.concat([up_sample_2, pool2], 3)
@@ -154,7 +155,7 @@ def inference(images, filter_size, skip, num_clases):
         activation=tf.nn.relu,
         name="conv6_2")
 
-    up_sample_3 = upsample_layer(inputs=conv6_2, channels_in=128, channels_out=128, factor=2, name="up_sample_3")
+    up_sample_3 = upsample.upsample_layer(inputs=conv6_2, channels_in=128, channels_out=128, factor=2, name="up_sample_3")
 
     if skip >= 2:
         skip_3 = tf.concat([up_sample_3, pool1], 3)
@@ -178,7 +179,7 @@ def inference(images, filter_size, skip, num_clases):
         activation=tf.nn.relu,
         name="conv7_2")
 
-    up_sample_4 = upsample_layer(inputs=conv7_2, channels_in=64, channels_out=64, factor=2, name="up_sample_7")
+    up_sample_4 = upsample.upsample_layer(inputs=conv7_2, channels_in=64, channels_out=64, factor=2, name="up_sample_7")
 
     if skip >= 1:
         skip_4 = tf.concat([up_sample_4, images], 3)

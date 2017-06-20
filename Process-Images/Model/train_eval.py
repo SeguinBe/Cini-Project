@@ -1,8 +1,8 @@
 import time
 
-import model
+
 import tensorflow as tf
-from model import inference, evaluation, training
+from Model.model import inference, evaluation, training
 from utils import batch_iter
 
 

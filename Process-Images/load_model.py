@@ -1,6 +1,5 @@
 import os
 
-import Model.model
 import tensorflow as tf
 from Model.model import inference
 
