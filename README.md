@@ -13,8 +13,7 @@ Process-Images:
 *	`pipeline.py`: Pipline that proceses the images
 *	`unwarp.py`: Conatins functions and model to correct image warping
 
-	Model:
-	*	`model.py`: Tensorflow model definition
-	*	`train_eval.py`: Conatins model train and evaluation functions
-	*	`train_script.py`: Short script to train the model
-	*	`upsample.py`: Definition of an unsample layer in Tensorflow
+*	`model.py`: Tensorflow model definition
+*	`train_eval.py`: Conatins model train and evaluation functions
+*	`train_script.py`: Short script to train the model
+*	`upsample.py`: Definition of an unsample layer in Tensorflow
