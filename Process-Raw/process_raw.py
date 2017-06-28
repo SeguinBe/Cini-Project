@@ -27,12 +27,11 @@ if not os.path.exists(load_directory):
     print("Folder does not exist")
     exit(1)
 
-save_path = args['destination']
-save_directory = os.path.dirname(save_path)
+save_directory = args['destination']
 if not os.path.exists(save_directory):
     os.makedirs(save_directory)
 
-f = open(save_path + "out.log", 'w')
+f = open(os.path.join(save_directory, "out.log"), 'w')
 
 ###############
 # Funtion def #
