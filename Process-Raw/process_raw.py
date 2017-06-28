@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 from rawkit.raw import Raw
 from glob import iglob
+import time
 
 from tqdm import tqdm
 
@@ -30,7 +31,7 @@ save_directory = args['destination']
 if not os.path.exists(save_directory):
     os.makedirs(save_directory)
 
-f = open(os.path.join(save_directory, "out.log"), 'w')
+f = open(os.path.join(save_directory, "out-{}.log".format(str(time.time())), 'w')
 
 ###############
 # Funtion def #
@@ -70,7 +71,7 @@ def process_file(file):
         raw_image = Raw(file.path)
         buffered_image = np.array(raw_image.to_buffer())
 
-        os.makedirs(os.path.dirname(file.save_path), exists_ok=True)
+        os.makedirs(os.path.dirname(file.save_path), exist_ok=True)
         
         if (file.path.endswith("verso.cr2")):
             image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
@@ -96,7 +97,7 @@ def process_file(file):
 #####################################
 
 max_workers = int(args["nbworkers"])
-verify_md5 = True
+verify_md5 = False
 inputs = []
 all_results = []
 
