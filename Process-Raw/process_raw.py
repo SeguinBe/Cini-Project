@@ -101,7 +101,7 @@ verify_md5 = False
 inputs = []
 all_results = []
 
-for file in tqdm(iglob(os.path.join(load_directory, '**/*.cr2'), recursive=True), desc="Indexing files"):
+for file in tqdm(iglob(os.path.join(load_directory, '**/*recto.cr2'), recursive=True), desc="Indexing files"):
     relative_path = file[len(load_directory):]
     inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path), verify_md5))
 
