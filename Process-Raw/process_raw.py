@@ -21,8 +21,7 @@ args = vars(ap.parse_args())
 # Getting raws folder and checking for existence #
 ##################################################
 
-load_path = args['raws']
-load_directory = os.path.dirname(load_path)
+load_directory = args['raws']
 if not os.path.exists(load_directory):
     print("Folder does not exist")
     exit(1)
@@ -71,6 +70,8 @@ def process_file(file):
         raw_image = Raw(file.path)
         buffered_image = np.array(raw_image.to_buffer())
 
+        os.makedirs(os.path.dirname(file.save_path), exists_ok=True)
+        
         if (file.path.endswith("verso.cr2")):
             image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
             image.save(file.save_path.replace(".cr2", ".jpg"), format='jpeg')
@@ -99,8 +100,8 @@ verify_md5 = True
 inputs = []
 all_results = []
 
-for file in tqdm(iglob(os.path.join(load_path, '**/*.cr2'), recursive=True), desc="Indexing files"):
-    relative_path = file[len(load_path):]
+for file in tqdm(iglob(os.path.join(load_directory, '**/*.cr2'), recursive=True), desc="Indexing files"):
+    relative_path = file[len(load_directory):]
     inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path), verify_md5))
 
 
