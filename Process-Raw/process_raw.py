@@ -6,6 +6,7 @@ import md5
 import numpy as np
 from PIL import Image
 from rawkit.raw import Raw
+from glob import iglob
 
 from tqdm import tqdm
 
@@ -99,9 +100,9 @@ verify_md5 = True
 inputs = []
 all_results = []
 
-for file in os.listdir(load_path):
-    if file.endswith(".cr2"):
-        inputs.append(File(os.path.join(load_directory, file),  os.path.join(save_directory, file), verify_md5))
+for file in tqdm(iglob(os.path.join(load_path, '**/*.cr2'), recursive=True), desc="Indexing files"):
+    relative_path = file[len(load_path):]
+    inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path), verify_md5))
 
 
 ######################
