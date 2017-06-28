@@ -31,7 +31,7 @@ save_directory = args['destination']
 if not os.path.exists(save_directory):
     os.makedirs(save_directory)
 
-f = open(os.path.join(save_directory, "out-{}.log".format(str(time.time())), 'w')
+f = open(os.path.join(save_directory, "out-{}.log".format(str(time.time()))), 'w')
 
 ###############
 # Funtion def #
