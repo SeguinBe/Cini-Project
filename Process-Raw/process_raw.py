@@ -62,29 +62,25 @@ def process_file(file):
     """
 
     try:
+        if os.path.exists(file.save_path):
+            return file
         if file.verify_md5:
             if not md5.check_md5(file.path, file.path.replace(".cr2", ".md5")):
                 f.write("{0} invalid md5\n".format(file))
                 f.flush()
                 return "{0} invalid md5".format(file)
 
-        raw_image = Raw(file.path)
-        buffered_image = np.array(raw_image.to_buffer())
+        with Raw(file.path) as raw_image:
+            buffered_image = np.array(raw_image.to_buffer())
 
-        os.makedirs(os.path.dirname(file.save_path), exist_ok=True)
+            os.makedirs(os.path.dirname(file.save_path), exist_ok=True)
         
-        if (file.path.endswith("verso.cr2")):
             image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
-            image.save(file.save_path.replace(".cr2", ".jpg"), format='jpeg')
+            image.save(file.save_path, format='jpeg')
             f.write("{0}\n".format(file))
             f.flush()
             return file
-        else:
-            image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
-            image.save(file.save_path.replace(".cr2", ".jpg"), format='jpeg')
-            f.write("{0}\n".format(file))
-            f.flush()
-            return file
+        
 
     except Exception as e:
         f.write("{0} excepted with error: {1}\n".format(file, str(e)).format(file))
@@ -103,7 +99,7 @@ all_results = []
 
 for file in tqdm(iglob(os.path.join(load_directory, '**/*recto.cr2'), recursive=True), desc="Indexing files"):
     relative_path = file[len(load_directory):]
-    inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path), verify_md5))
+    inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path).replace('.cr2', '.jpg'), verify_md5))
 
 
 ######################

@@ -7,7 +7,7 @@ from model import inference
 
 class Model:
     def __init__(self, cekpoint_path, filter_size, skip, num_clases):
-        os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+        os.environ["CUDA_VISIBLE_DEVICES"] = "0"
         with tf.Graph().as_default():
             self.images_placeholder, self.labels_placeholder = self.placeholder_inputs(1)
             self.logits = inference(images=self.images_placeholder, filter_size=filter_size, skip=skip,
