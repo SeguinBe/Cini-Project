@@ -1,10 +1,10 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 img_dir = "/scratch/bojan/large_sample_jpg/"
 file_writer = "/scratch/bojan/TFCNN/160"
 model_path = "/scratch/bojan/model_verso.ckpt"
 
-from Model.train_eval import run_training
+from train_eval import run_training
 from utils import loading_training_data
 import numpy as np
 

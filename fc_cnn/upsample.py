@@ -81,9 +81,10 @@ def upsample_layer(inputs, channels_in, channels_out, factor, name="upsample"):
     with tf.name_scope(name):
         up_filter = tf.constant(bilinear_upsample_weights(factor, channels_in))
         out_shape = tf.stack(
-            [inputs.get_shape()[0], inputs.get_shape()[1] * factor, inputs.get_shape()[2] * factor, channels_out])
+            [tf.shape(inputs)[0], inputs.get_shape()[1] * factor, inputs.get_shape()[2] * factor, channels_out])
         up_sample = tf.nn.conv2d_transpose(inputs, up_filter,
                                            output_shape=out_shape,
                                            strides=[1, factor, factor, 1])
+        up_sample.set_shape([None, inputs.get_shape()[1] * factor, inputs.get_shape()[2] * factor, channels_out])
         ##
         return up_sample

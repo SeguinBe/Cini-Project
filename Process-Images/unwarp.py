@@ -2,11 +2,13 @@ import tensorflow as tf
 import cv2
 import numpy as np
 import math
+import os
 
 from skimage import measure
 from scipy import ndimage
 
-def get_uwrap(prediction):
+
+def get_cleaned_cardboard_prediction(prediction):
 
     # Performe Erosion and Dilation
     kernel = np.ones((5, 5), np.uint8)
@@ -23,9 +25,16 @@ def get_uwrap(prediction):
 
     # Get enclosing rect and rotate
     angle = cv2.minAreaRect(np.argwhere(closing > 0))[2]
-    closing = rorate_image(closing, angle)
-    rect = cv2.boundingRect(np.argwhere(closing > 0))
+    while angle > 45:
+        angle -= 90
+    while angle < -45:
+        angle += 90
+    closing = rotate_image(closing, angle)
+    return closing, angle
 
+
+def uwrap(closing):
+    rect = cv2.boundingRect(np.argwhere(closing > 0))
     # Get edges
     edges = cv2.Canny(closing.astype(np.uint8), 0, 5) - cv2.Canny(closing.astype(np.uint8), 0, 6)
     edges = measure.label(edges)
@@ -34,9 +43,10 @@ def get_uwrap(prediction):
     # Split edges in 4 different matrices and find the distortion params
     p, center_x, center_y = find_distortion_params(*separate_sides(edges, rect))
 
-    return p, closing, angle, center_x, center_y
+    return p, center_x, center_y
 
-def rorate_image (image, angle):
+
+def rotate_image (image, angle):
     """
     Takes an image and a angle and roteates the image by the given angle while maintaining the whole image
     
@@ -60,6 +70,7 @@ def rorate_image (image, angle):
 
     return cv2.warpAffine(image, M, (bound_w, bound_h))
 
+
 def get_largest_component(mat):
     max_sum = 0
     max_comp = 0
@@ -78,6 +89,7 @@ def get_largest_component(mat):
     mat[mat == max_comp] = 1
 
     return mat
+
 
 def separate_sides(edges, rect):
 
@@ -136,6 +148,7 @@ def separate_sides(edges, rect):
 
     return np.stack(top), np.stack(bottom), np.stack(left_side), np.stack(right_side), rect, center_x, center_y
 
+
 def find_distortion_params(top, bottom, left_side, right_side, rect, center_x, center_y):
 
     slice_places = [len(top), len(top) + len(bottom), len(top) + len(bottom) + len(left_side),
@@ -145,15 +158,8 @@ def find_distortion_params(top, bottom, left_side, right_side, rect, center_x, c
 
     rec = [rect[1], rect[1] + rect[3], rect[0], rect[0] + rect[2]]
 
-    with tf.device('/cpu:0'):
-
-        k_x = tf.Variable(tf.random_uniform([2], minval=0, maxval=0))
-        p_x = tf.Variable(tf.random_uniform([4], minval=0, maxval=0))
-
-        k_y = tf.Variable(tf.random_uniform([2], minval=0, maxval=0))
-        p_y = tf.Variable(tf.random_uniform([4], minval=0, maxval=0))
-
-        sess = tf.Session(config=tf.ConfigProto(log_device_placement=False))
+    os.environ['CUDA_VISIBLE_DEVICES'] = ""
+    with tf.Graph().as_default():
 
         def poly_func(x, y, k_x, p_x, k_y, p_y, mid_x, mid_y):
 
@@ -197,30 +203,40 @@ def find_distortion_params(top, bottom, left_side, right_side, rect, center_x, c
             return train_step
 
         def get_params():
-            return (k_x, p_x, k_y, p_y)
+            return k_x, p_x, k_y, p_y
 
-        pl_x = tf.placeholder(tf.float32, [1, len(input_coor)])
-        pl_y = tf.placeholder(tf.float32, [1, len(input_coor)])
-        rec_coor = tf.placeholder(tf.float32, [4])
-        slice_place = tf.placeholder(tf.int32, [4])
+        with tf.device('/cpu:0'):
+            k_x = tf.Variable(tf.random_uniform([2], minval=0, maxval=0))
+            p_x = tf.Variable(tf.random_uniform([4], minval=0, maxval=0))
 
-        mid_x = tf.placeholder(tf.float32)
-        mid_y = tf.placeholder(tf.float32)
+            k_y = tf.Variable(tf.random_uniform([2], minval=0, maxval=0))
+            p_y = tf.Variable(tf.random_uniform([4], minval=0, maxval=0))
 
-        out = inference(pl_x, pl_y, mid_x, mid_y)
-        loss_var = loss(out[0], out[1], pl_x, pl_y, rec_coor, slice_place)
-        train_op = training(loss_var)
-        get_p = get_params()
+            pl_x = tf.placeholder(tf.float32, [1, len(input_coor)])
+            pl_y = tf.placeholder(tf.float32, [1, len(input_coor)])
+            rec_coor = tf.placeholder(tf.float32, [4])
+            slice_place = tf.placeholder(tf.int32, [4])
 
-        sess.run(tf.global_variables_initializer())
-        for i in range(30):
-            sess.run(train_op, feed_dict={pl_x: (input_coor[:, 1]).reshape(1, -1),
-                                          pl_y: (input_coor[:, 0]).reshape(1, -1), mid_x: center_x,
-                                          mid_y: center_y, rec_coor: rec, slice_place: slice_places})
+            mid_x = tf.placeholder(tf.float32)
+            mid_y = tf.placeholder(tf.float32)
 
-        p = sess.run(get_p, feed_dict={pl_x: (input_coor[:, 1]).reshape(1, -1),
-                                       pl_y: (input_coor[:, 0]).reshape(1, -1), mid_x: center_x,
-                                       mid_y: center_y, rec_coor: rec, slice_place: slice_places})
+            out = inference(pl_x, pl_y, mid_x, mid_y)
+            loss_var = loss(out[0], out[1], pl_x, pl_y, rec_coor, slice_place)
+            train_op = training(loss_var)
+            get_p = get_params()
+
+        config = tf.ConfigProto()
+        config.gpu_options.visible_device_list = ""
+        with tf.Session(config=config) as sess:
+            sess.run(tf.global_variables_initializer())
+            for i in range(30):
+                sess.run(train_op, feed_dict={pl_x: (input_coor[:, 1]).reshape(1, -1),
+                                              pl_y: (input_coor[:, 0]).reshape(1, -1), mid_x: center_x,
+                                              mid_y: center_y, rec_coor: rec, slice_place: slice_places})
+
+            p = sess.run(get_p, feed_dict={pl_x: (input_coor[:, 1]).reshape(1, -1),
+                                           pl_y: (input_coor[:, 0]).reshape(1, -1), mid_x: center_x,
+                                           mid_y: center_y, rec_coor: rec, slice_place: slice_places})
 
         return p, center_x, center_y
 

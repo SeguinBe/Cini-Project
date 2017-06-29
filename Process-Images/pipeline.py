@@ -3,6 +3,8 @@ import glob
 import os.path
 import re
 from pathlib import Path
+import logging
+from concurrent.futures import ThreadPoolExecutor
 
 from RawScan import *
 from base import *
@@ -151,6 +153,5 @@ fhandler.setFormatter(formatter)
 logger.addHandler(fhandler)
 logger.setLevel(logging.DEBUG)
 
-for file in raw_files:
-    process_one(file)
-
+with ThreadPoolExecutor(nb_workers) as e:
+    e.map(process_one, raw_files)

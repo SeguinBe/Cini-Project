@@ -42,40 +42,43 @@ class RawScan:
         else:
             self.output_filename = shared.VERSO_CARDBOARD_DEFAULT_FILENAME
 
-    def crop_cardboard(self, model):
+    def crop_cardboard(self, model, do_unwarp=False):
 
         # Performs the crop
         mat = np.array(self.raw_scan.resize((1024, 688)))
-        mat = mat.reshape(1, 688, 1024, 3)
+        mat = mat.reshape([1, 688, 1024, 3])
         mat = mat.astype(np.uint8)
-
 
         prediction = model.gen_prediction(mat)[0]
 
         full_size_image = np.asarray(self.raw_scan.resize((2048, 1376)))
 
-        self.p, self.prediction, self.angle, self.center_x, self.center_y = unwarp.get_uwrap(prediction)
+        self.prediction, self.angle = unwarp.get_cleaned_cardboard_prediction(prediction)
+        full_size_image = unwarp.rotate_image(full_size_image, self.angle)
 
-        self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape), order=1, prefilter=False)
-        # rotate it here
-        full_size_image = unwarp.rorate_image(full_size_image, self.angle)
-        self.warped_image = map_coordinates(full_size_image, warp_coords(self.transform, full_size_image.shape), order=1, prefilter=False)
+        if do_unwarp:
+            self.p, self.center_x, self.center_y = unwarp.uwrap(self.prediction)
+            self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape), order=1, prefilter=False)
+            self.warped_image = map_coordinates(full_size_image, warp_coords(self.transform, full_size_image.shape), order=1, prefilter=False)
+        else:
+            self.warped_image = full_size_image
 
         rect = cv2.minAreaRect(np.argwhere(self.prediction > 0))
         self.cropped_cardboard = self.crop_minAreaRect(self.warped_image, rect)
-
 
     def crop_image(self):
 
         assert self.prediction is not None, "Call crop_cardboard first"
 
         angle = cv2.minAreaRect(np.argwhere(self.prediction > 1))[2]
-        rotated_img = unwarp.rorate_image(self.warped_image, angle)
-        rotated_pred = unwarp.rorate_image(self.prediction, angle)
+        while angle > 45:
+            angle -= 90
+        while angle < -45:
+            angle += 90
+        rotated_img = unwarp.rotate_image(self.warped_image, angle)
+        rotated_pred = unwarp.rotate_image(self.prediction, angle)
         rect = cv2.minAreaRect(np.argwhere(rotated_pred > 1))
         self.cropped_image = self.crop_minAreaRect(rotated_img, rect)
-
-
 
         # Performs the checks
         # h, w = self.cropped_cardboard.shape[:2]
@@ -120,7 +123,6 @@ class RawScan:
 
         return xy.astype(np.int32)
 
-
     def get_cardboard(self) -> Union['RectoCardboard', 'VersoCardboard']:
         assert self.cropped_cardboard is not None, 'Call crop_cardboard first'
         if self.document_info.side == 'recto':
@@ -128,11 +130,9 @@ class RawScan:
         else:
             return VersoCardboard(self.document_info, self.cropped_cardboard)
 
-
     def get_image(self) -> 'ExtractedImage':
         assert self.cropped_image is not None, 'Call crop_image first'
         return ExtractedImage(self.document_info, self.cropped_image)
-
 
     def save_cardboard(self, path=None):
         assert self.cropped_cardboard is not None, 'Call crop_cardboard first'
@@ -141,7 +141,6 @@ class RawScan:
             cv2.imwrite(os.path.join(self.document_info.output_folder, self.output_filename), self.cropped_cardboard)
         else:
             cv2.imwrite(path, self.cropped_cardboard)
-
 
     def save_prediction(self, path=None):
         assert self.prediction is not None, 'Call crop_cardboard first'
