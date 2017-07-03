@@ -1,16 +1,18 @@
 import tensorflow as tf
-from . import upsample
+from tensorflow.contrib import layers, slim
 
 
 def model_fn(mode, features, labels, params):
 
-    filter_size = params['filter_size']
-    skip = params['skip']
+    model_params = params['model_params']
     num_classes = params['num_classes']
 
-    logits = inference(features['images'], filter_size, skip, num_classes)
-    prediction_probs = tf.nn.softmax(logits)
-    prediction_labels = tf.argmax(logits, axis=-1)
+    logits = inference(features['images'], model_params, num_classes,
+                       is_training=(mode == tf.estimator.ModeKeys.TRAIN))
+    with tf.name_scope('softmax'):
+        prediction_probs = tf.nn.softmax(logits, name='softmax')
+    prediction_labels = tf.argmax(logits, axis=-1, name='label_preds')
+    predictions = {'probs': prediction_probs, 'labels': prediction_labels}
 
     if mode in [tf.estimator.ModeKeys.TRAIN, tf.estimator.ModeKeys.EVAL]:
         onehot_labels = tf.one_hot(indices=labels, depth=num_classes)
@@ -27,6 +29,9 @@ def model_fn(mode, features, labels, params):
         ema_loss = ema.average(loss)
         tf.summary.scalar('losses/loss_EMA', ema_loss)
         tf.summary.scalar('losses/loss_batch', loss)
+        # TODO
+        #tf.summary.image('output/prediction',
+        #                 tf.image.resize_images(prediction_labels, tf.cast(tf.shape(prediction_labels)[1:3]/3, tf.int32)), max_outputs=1)
 
         optimizer = tf.train.AdamOptimizer(params['learning_rate'])
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
@@ -40,15 +45,16 @@ def model_fn(mode, features, labels, params):
         metrics = None
 
     return tf.estimator.EstimatorSpec(mode,
-                                      predictions={'probs': prediction_probs,
-                                                   'labels': prediction_labels},
+                                      predictions=predictions,
                                       loss=loss,
                                       train_op=train_op,
-                                      eval_metric_ops=metrics
+                                      eval_metric_ops=metrics,
+                                      export_outputs={'output':
+                                                      tf.estimator.export.PredictOutput({'labels': prediction_labels})}
                                       )
 
 
-def inference(images, filter_size, skip, num_classes):
+def inference(images, model_params, num_classes, is_training=False, weight_decay=0.0):
 
     """Model function for CNN.
     Args:
@@ -60,190 +66,58 @@ def inference(images, filter_size, skip, num_classes):
         :return softmax_linear: Output tensor with the computed logits.
     """
 
-    #tf.summary.image('input', images, 3)
+    def conv_pool(input_tensor, layer_params, number):
+        for i, (nb_filters, filter_size) in enumerate(layer_params):
+            input_tensor = layers.conv2d(
+                inputs=input_tensor,
+                num_outputs=nb_filters,
+                kernel_size=[filter_size, filter_size],
+                scope="conv{}_{}".format(number, i+1))
 
-    if type(filter_size) == int:
-        filter_size = [filter_size] * 17
+        pool = tf.layers.max_pooling2d(inputs=input_tensor, pool_size=[2, 2], strides=2, name="pool{}".format(number))
+        return pool
 
-    # Convolution block #1
-    conv1_1 = tf.layers.conv2d(
-        inputs=images,
-        filters=32,
-        kernel_size=[filter_size[0], filter_size[0]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv1_1")
+    def upsample_conv(pooled_layer, previous_layer, layer_params, number):
+        with tf.name_scope('upsample{}'.format(number)):
+            if previous_layer.get_shape()[1] and previous_layer.get_shape()[2]:
+                target_shape = previous_layer.get_shape()[1:3]
+            else:
+                target_shape = tf.shape(previous_layer)[1:3]
+            upsampled_layer = tf.image.resize_images(pooled_layer, target_shape,
+                                                     method=tf.image.ResizeMethod.BILINEAR)
+            input_tensor = tf.concat([upsampled_layer, previous_layer], 3)
 
-    conv1_2 = tf.layers.conv2d(
-        inputs=conv1_1,
-        filters=32,
-        kernel_size=[filter_size[1], filter_size[1]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv1_2")
+        for i, (nb_filters, filter_size) in enumerate(layer_params):
+            input_tensor = layers.conv2d(
+                inputs=input_tensor,
+                num_outputs=nb_filters,
+                kernel_size=[filter_size, filter_size],
+                scope="conv{}_{}".format(number, i+1)
+            )
+        return input_tensor
 
-    pool1 = tf.layers.max_pooling2d(inputs=conv1_2, pool_size=[2, 2], strides=2, name="pool_1")
+    with slim.arg_scope([layers.conv2d], activation_fn=tf.nn.relu, padding='same',
+                        #normalizer_fn=layers.batch_norm,
+                        weights_regularizer=slim.regularizers.l2_regularizer(weight_decay)):
+        with slim.arg_scope([layers.batch_norm], is_training=is_training):
+            intermediate_levels = []
+            current_tensor = images
+            n_layer = 1
+            for layer_params in model_params:
+                intermediate_levels.append(current_tensor)
+                current_tensor = conv_pool(current_tensor, layer_params, n_layer)
+                n_layer += 1
 
-    # Convolution block #2
-    conv2_1 = tf.layers.conv2d(
-        inputs=pool1,
-        filters=64,
-        kernel_size=[filter_size[2], filter_size[2]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv2_1")
+            for i in reversed(range(len(intermediate_levels))):
+                current_tensor = upsample_conv(current_tensor, intermediate_levels[i],
+                                               reversed(model_params[i]), n_layer)
+                n_layer += 1
 
-    conv2_2 = tf.layers.conv2d(
-        inputs=conv2_1,
-        filters=64,
-        kernel_size=[filter_size[3], filter_size[3]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv2_2")
-
-    pool2 = tf.layers.max_pooling2d(inputs=conv2_2, pool_size=[2, 2], strides=2, name="pool_2")
-
-    # Convolution block #3
-    conv3_1 = tf.layers.conv2d(
-        inputs=pool2,
-        filters=128,
-        kernel_size=[filter_size[4], filter_size[4]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv3_1")
-
-    conv3_2 = tf.layers.conv2d(
-        inputs=conv3_1,
-        filters=128,
-        kernel_size=[filter_size[5], filter_size[5]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv3_2")
-
-    pool3 = tf.layers.max_pooling2d(inputs=conv3_2, pool_size=[2, 2], strides=2, name="pool_3")
-
-    # Convolution block #4
-    conv4_1 = tf.layers.conv2d(
-        inputs=pool3,
-        filters=128,
-        kernel_size=[filter_size[6], filter_size[6]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv4_1")
-
-    conv4_2 = tf.layers.conv2d(
-        inputs=conv4_1,
-        filters=128,
-        kernel_size=[filter_size[7], filter_size[7]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv4_2")
-
-    pool4 = tf.layers.max_pooling2d(inputs=conv4_2, pool_size=[2, 2], strides=2, name="pool_4")
-
-    up_sample_1 = upsample.upsample_layer(inputs=pool4, channels_in=128, channels_out=128, factor=2, name="up_sample_1")
-
-    if skip == 3:
-        skip_1 = tf.concat([up_sample_1, pool3], 3)
-    else:
-        skip_1 = up_sample_1
-
-    # Convolution block #5
-    conv5_1 = tf.layers.conv2d(
-        inputs=skip_1,
-        filters=128,
-        kernel_size=[filter_size[8], filter_size[8]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv5_1")
-
-    conv5_2 = tf.layers.conv2d(
-        inputs=conv5_1,
-        filters=128,
-        kernel_size=[filter_size[9], filter_size[9]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv5_2")
-
-    up_sample_2 = upsample.upsample_layer(inputs=conv5_2, channels_in=128, channels_out=128, factor=2, name="up_sample_2")
-
-    if skip:
-        skip_2 = tf.concat([up_sample_2, pool2], 3)
-    else:
-        skip_2 = up_sample_2
-
-    # Convolution block #6
-    conv6_1 = tf.layers.conv2d(
-        inputs=skip_2,
-        filters=128,
-        kernel_size=[filter_size[10], filter_size[10]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv6_1")
-
-    conv6_2 = tf.layers.conv2d(
-        inputs=conv6_1,
-        filters=128,
-        kernel_size=[filter_size[11], filter_size[11]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv6_2")
-
-    up_sample_3 = upsample.upsample_layer(inputs=conv6_2, channels_in=128, channels_out=128, factor=2, name="up_sample_3")
-
-    if skip >= 2:
-        skip_3 = tf.concat([up_sample_3, pool1], 3)
-    else:
-        skip_3 = up_sample_3
-
-    # Convolution block #7
-    conv7_1 = tf.layers.conv2d(
-        inputs=skip_3,
-        filters=64,
-        kernel_size=[filter_size[12], filter_size[12]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv7_1")
-
-    conv7_2 = tf.layers.conv2d(
-        inputs=conv7_1,
-        filters=64,
-        kernel_size=[filter_size[13], filter_size[13]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv7_2")
-
-    up_sample_4 = upsample.upsample_layer(inputs=conv7_2, channels_in=64, channels_out=64, factor=2, name="up_sample_7")
-
-    if skip >= 1:
-        skip_4 = tf.concat([up_sample_4, images], 3)
-    else:
-        skip_4 = up_sample_4
-
-    # Convolution block #8
-    conv8_1 = tf.layers.conv2d(
-        inputs=skip_4,
-        filters=32,
-        kernel_size=[filter_size[14], filter_size[14]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv8_1")
-
-    conv8_2 = tf.layers.conv2d(
-        inputs=conv8_1,
-        filters=32,
-        kernel_size=[filter_size[15], filter_size[15]],
-        padding="same",
-        activation=tf.nn.relu,
-        name="conv8_2")
-
-    conv8_3 = tf.layers.conv2d(
-        inputs=conv8_2,
-        filters=num_classes,
-        kernel_size=[filter_size[16], filter_size[16]],
-        padding="same",
-        name="conv8_3")
-
-    logits = conv8_3
-
+            logits = layers.conv2d(
+                inputs=current_tensor,
+                num_outputs=num_classes,
+                activation_fn=None,
+                kernel_size=[7, 7],
+                scope="conv{}_logits".format(n_layer)
+            )
     return logits

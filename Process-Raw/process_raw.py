@@ -37,7 +37,6 @@ f = open(os.path.join(save_directory, "out-{}.log".format(str(time.time()))), 'w
 ###############
 # Funtion def #
 ###############
-
 class File:
     def __init__(self, path, save_path, check_md5=True,):
         self.verify_md5 = check_md5

@@ -8,29 +8,15 @@ from skimage import measure
 from scipy import ndimage
 
 
-def get_cleaned_cardboard_prediction(prediction):
+def get_cleaned_prediction(prediction):
 
     # Performe Erosion and Dilation
-    kernel = np.ones((5, 5), np.uint8)
-    closing = cv2.medianBlur(cv2.morphologyEx(prediction.astype(np.uint8), cv2.MORPH_OPEN, kernel), 5)
-    closing = cv2.morphologyEx(closing, cv2.MORPH_CLOSE, kernel)
+    #kernel = np.ones((5, 5), np.uint8)
+    #closing = cv2.medianBlur(cv2.morphologyEx(prediction.astype(np.uint8), cv2.MORPH_OPEN, kernel), 5)
+    #closing = cv2.morphologyEx(closing, cv2.MORPH_CLOSE, kernel)
+    closing = cv2.medianBlur(prediction.astype(np.uint8), 7)
 
-    # Flip classes
-    closing[closing == 0] = 3
-    closing[closing == 1] = 0
-    closing[closing == 3] = 1
-
-    # Upsace prediction
-    closing = ndimage.interpolation.zoom(input=closing, zoom=2, order=0)
-
-    # Get enclosing rect and rotate
-    angle = cv2.minAreaRect(np.argwhere(closing > 0))[2]
-    while angle > 45:
-        angle -= 90
-    while angle < -45:
-        angle += 90
-    closing = rotate_image(closing, angle)
-    return closing, angle
+    return closing
 
 
 def uwrap(closing):
@@ -46,7 +32,7 @@ def uwrap(closing):
     return p, center_x, center_y
 
 
-def rotate_image (image, angle):
+def rotate_image(image, angle):
     """
     Takes an image and a angle and roteates the image by the given angle while maintaining the whole image
     

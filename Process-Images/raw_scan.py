@@ -3,17 +3,18 @@ import os.path
 import numpy as np
 import unwarp
 import utils
-from Image import *
+from image import ExtractedImage
 from base import *
-from cardboard import *
+from cardboard import RectoCardboard, VersoCardboard
+import shared
+import cv2
+import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import map_coordinates
 from skimage.transform import warp_coords
 from typing import Union
 
 
-
 class RawScan:
-
     def __init__(self, document_info: DocumentInfo, base_path: str):
         """
         :param document_info:
@@ -42,43 +43,49 @@ class RawScan:
         else:
             self.output_filename = shared.VERSO_CARDBOARD_DEFAULT_FILENAME
 
-    def crop_cardboard(self, model, do_unwarp=False):
-
+    def crop_cardboard(self, model, do_unwarp=False, crop_image=True):
         # Performs the crop
-        mat = np.array(self.raw_scan.resize((1024, 688)))
-        mat = mat.reshape([1, 688, 1024, 3])
-        mat = mat.astype(np.uint8)
+        target_h, target_w = (688, 1024)
+        full_size_image = np.asarray(self.raw_scan)
+        original_h, original_w = full_size_image.shape[:2]
+        mat = cv2.resize(full_size_image, (target_w, target_h))
 
-        prediction = model.gen_prediction(mat)[0]
+        prediction = model.predict(mat[None, :, :, :])[0]
+        # Switch classes
+        prediction[prediction == 0] = 3
+        prediction[prediction == 1] = 0
+        prediction[prediction == 3] = 1
+        self.prediction = prediction
+        self.prediction_scale = target_h/original_h
 
-        full_size_image = np.asarray(self.raw_scan.resize((2048, 1376)))
-
-        self.prediction, self.angle = unwarp.get_cleaned_cardboard_prediction(prediction)
-        full_size_image = unwarp.rotate_image(full_size_image, self.angle)
-
+        cardboard_prediction = unwarp.get_cleaned_prediction(prediction > 0)
+        _, contours, hierarchy = cv2.findContours(cardboard_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        cardboard_contour = contours[np.argmax([cv2.contourArea(c) for c in contours])]
         if do_unwarp:
             self.p, self.center_x, self.center_y = unwarp.uwrap(self.prediction)
-            self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape), order=1, prefilter=False)
-            self.warped_image = map_coordinates(full_size_image, warp_coords(self.transform, full_size_image.shape), order=1, prefilter=False)
+            self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape),
+                                              order=1, prefilter=False)
+            self.warped_image = map_coordinates(full_size_image, warp_coords(self.transform, full_size_image.shape),
+                                                order=1, prefilter=False)
         else:
             self.warped_image = full_size_image
 
-        rect = cv2.minAreaRect(np.argwhere(self.prediction > 0))
-        self.cropped_cardboard = self.crop_minAreaRect(self.warped_image, rect)
+        self.cropped_cardboard = self.extract_minAreaRect(self.warped_image, cv2.minAreaRect(cardboard_contour),
+                                                          scale=1/self.prediction_scale)
 
-    def crop_image(self):
+        if crop_image:
+            image_prediction = unwarp.get_cleaned_prediction(self.prediction > 1)
+            _, contours, hierarchy = cv2.findContours(image_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            rect = cv2.minAreaRect(np.concatenate(contours))
+            self.cropped_image = self.extract_minAreaRect(self.warped_image, rect,
+                                                          scale=1/self.prediction_scale)
 
-        assert self.prediction is not None, "Call crop_cardboard first"
-
-        angle = cv2.minAreaRect(np.argwhere(self.prediction > 1))[2]
-        while angle > 45:
-            angle -= 90
-        while angle < -45:
-            angle += 90
-        rotated_img = unwarp.rotate_image(self.warped_image, angle)
-        rotated_pred = unwarp.rotate_image(self.prediction, angle)
-        rect = cv2.minAreaRect(np.argwhere(rotated_pred > 1))
-        self.cropped_image = self.crop_minAreaRect(rotated_img, rect)
+        h, w = self.cropped_cardboard.shape[:2]
+        if h < w:
+            self.cropped_cardboard = self.cropped_cardboard.transpose(1, 0, 2)[::-1]
+            if crop_image:
+                self.cropped_image = self.cropped_image.transpose(1, 0, 2)[::-1]
+            self.document_info.logger.info('Rotated the cardboard')
 
         # Performs the checks
         # h, w = self.cropped_cardboard.shape[:2]
@@ -93,13 +100,24 @@ class RawScan:
         # if not self._validate_ratio(h / w):
         #    self.document_info.logger.warning('Unusual cardboard ratio : {}'.format(h / w))
 
-    def crop_minAreaRect(self, img, rect):
-        rect0 = (rect[0], rect[1], 0.0)
-        box = cv2.boxPoints(rect)
-        # rotate bounding bo
-        pts = np.int0(box)
-        img_crop = img[np.min(pts[:, 0]) + 2:np.max(pts[:, 0]) - 2, np.min(pts[:, 1]) + 2:np.max(pts[:, 1]) - 2]
-        return img_crop
+    def extract_minAreaRect(self, img, rect, scale):
+        center, size, angle = rect
+        # Find the closest angle to vertical
+        while angle > 45:
+            angle -= 90
+            size = (size[1], size[0])
+        while angle < -45:
+            angle += 90
+            size = (size[1], size[0])
+        # Multiply sizes by the scale factor
+        center = (center[0] * scale, center[1] * scale)
+        size = (size[0] * scale, size[1] * scale)
+
+        # Generates the transformation matrix
+        T = np.array([[0, 0, center[0] - size[0] / 2], [0, 0, center[1] - size[1] / 2]])
+        M = cv2.getRotationMatrix2D(center, angle, 1.0) - T
+        # Perform the transformation
+        return cv2.warpAffine(img, M, (round(size[0]), round(size[1])))
 
     def transform(self, xy):
 
@@ -134,21 +152,12 @@ class RawScan:
         assert self.cropped_image is not None, 'Call crop_image first'
         return ExtractedImage(self.document_info, self.cropped_image)
 
-    def save_cardboard(self, path=None):
-        assert self.cropped_cardboard is not None, 'Call crop_cardboard first'
-        if path is None:
-            self.document_info.check_output_folder()
-            cv2.imwrite(os.path.join(self.document_info.output_folder, self.output_filename), self.cropped_cardboard)
-        else:
-            cv2.imwrite(path, self.cropped_cardboard)
-
     def save_prediction(self, path=None):
         assert self.prediction is not None, 'Call crop_cardboard first'
         if path is None:
             self.document_info.check_output_folder()
-            plt.imsave(os.path.join(self.document_info.output_folder, self.output_prediction), self.prediction.astype(np.uint8))
-        else:
-            plt.imsave(path, self.prediction)
+            path = os.path.join(self.document_info.output_folder, self.output_prediction)
+        plt.imsave(path, self.prediction)
 
     @staticmethod
     def _validate_width(width):

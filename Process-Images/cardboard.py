@@ -1,11 +1,10 @@
 import os.path
 
 import cv2
-import matplotlib.pyplot as plt
+from PIL import Image
 import numpy as np
 import shared
 from base import DocumentInfo
-
 
 
 class RectoCardboard:
@@ -24,9 +23,9 @@ class RectoCardboard:
         assert self.cardboard is not None
         if path is None:
             self.document_info.check_output_folder()
-            plt.imsave(os.path.join(self.document_info.output_folder, shared.IMAGE_DEFAULT_FILENAME), self.cardboard.astype(np.uint8))
-        else:
-            plt.imsave(path, self.cardboard.astype(np.uint8))
+            path = os.path.join(self.document_info.output_folder, shared.IMAGE_DEFAULT_FILENAME)
+        im = Image.fromarray(self.cardboard.astype(np.uint8))
+        im.save(path)
 
     @staticmethod
     def _validate_image_section(x, page_width):
