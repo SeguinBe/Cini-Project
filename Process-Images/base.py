@@ -1,5 +1,6 @@
 import logging
 import os.path
+import time
 
 
 class DocumentInfo:
@@ -35,3 +36,17 @@ class DocumentInfo:
         stripped_barcode_1 = self.basename.replace(" ", "").replace("_", "")
         stripped_barcode_2 = detected_barcode.replace(" ", "").replace("_", "")
         return stripped_barcode_1 == stripped_barcode_2
+
+
+class CatchTime(object):
+    verbose = False
+    def __init__(self, name):
+        self.name = name
+
+    def __enter__(self):
+        self.t = time.time()
+        return self
+
+    def __exit__(self, type, value, traceback):
+        if self.verbose:
+            print('Timing {} : {}s'.format(self.name, time.time()-self.t))

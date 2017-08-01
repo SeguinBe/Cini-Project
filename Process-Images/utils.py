@@ -103,7 +103,7 @@ def load_jpg_file_to_image(filename):
     :return: PIL.Image
     """
     image = Image.open(filename)
-    return image
+    return np.asarray(image)
 
 def load_raw_file_to_image(filename):
     """

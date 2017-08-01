@@ -1,10 +1,11 @@
 import os.path
 
 import cv2
-import matplotlib.pyplot as plt
+from PIL import Image
 import numpy as np
 import shared
 from base import DocumentInfo
+
 
 class ExtractedImage:
     def __init__(self, document_info: DocumentInfo, document=None):
@@ -19,7 +20,7 @@ class ExtractedImage:
         assert self._image is not None
         if path is None:
             self.document_info.check_output_folder()
-            plt.imsave(os.path.join(self.document_info.output_folder, shared.PREDICTION_CARDBOARD_DEFAULT_FILENAME), self._image.astype(np.uint8))
-        else:
-            plt.imsave(path, self._image.astype(np.uint8))
+            path = os.path.join(self.document_info.output_folder, shared.PREDICTION_CARDBOARD_DEFAULT_FILENAME)
+        im = Image.fromarray(self._image.astype(np.uint8))
+        im.save(path, quality=90)
 

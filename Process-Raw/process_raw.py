@@ -15,9 +15,11 @@ ap = argparse.ArgumentParser()
 ap.add_argument("-r", "--raws", required=True, help="Folder with raw image files")
 ap.add_argument("-d", "--destination", required=True, help="Folder where the results will be saved")
 ap.add_argument("-w", "--nbworkers", required=False, default='1', help="Number of workers for parallelization")
+ap.add_argument("-s", "--skip-processed", action='store_true', help="Skips already processed images")
 ap.add_argument("--md5", action='store_true', help="Flag for checking md5 or not")
 args = vars(ap.parse_args())
 
+skip_processed = args['skip_processed']
 
 ##################################################
 # Getting raws folder and checking for existence #
@@ -62,13 +64,12 @@ def process_file(file):
     """
 
     try:
-        if os.path.exists(file.save_path):
+        if os.path.exists(file.save_path) and skip_processed:
             return file
         if file.verify_md5:
             if not md5.check_md5(file.path, file.path.replace(".cr2", ".md5")):
                 f.write("{0} invalid md5\n".format(file.path))
                 f.flush()
-                return "{0} invalid md5".format(file.path)
 
         with Raw(file.path) as raw_image:
             buffered_image = np.array(raw_image.to_buffer())
@@ -76,16 +77,13 @@ def process_file(file):
             os.makedirs(os.path.dirname(file.save_path), exist_ok=True)
         
             image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
-            image.save(file.save_path, format='jpeg')
+            image.save(file.save_path, format='jpeg', quality=90)
             f.write("{0}\n".format(file.path))
             f.flush()
-            return file
-        
 
     except Exception as e:
-        f.write("{0} excepted with error: {1}\n".format(file.path, str(e)))
+        f.write("{} excepted with error: {}\n".format(file.path, e))
         f.flush()
-        return "{0} excepted with error: {1}".format(file.path, str(e))
 
 
 #####################################

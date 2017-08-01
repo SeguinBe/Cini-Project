@@ -25,7 +25,7 @@ class RectoCardboard:
             self.document_info.check_output_folder()
             path = os.path.join(self.document_info.output_folder, shared.IMAGE_DEFAULT_FILENAME)
         im = Image.fromarray(self.cardboard.astype(np.uint8))
-        im.save(path)
+        im.save(path, quality=90)
 
     @staticmethod
     def _validate_image_section(x, page_width):

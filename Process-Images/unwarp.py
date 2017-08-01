@@ -14,7 +14,8 @@ def get_cleaned_prediction(prediction):
     #kernel = np.ones((5, 5), np.uint8)
     #closing = cv2.medianBlur(cv2.morphologyEx(prediction.astype(np.uint8), cv2.MORPH_OPEN, kernel), 5)
     #closing = cv2.morphologyEx(closing, cv2.MORPH_CLOSE, kernel)
-    closing = cv2.medianBlur(prediction.astype(np.uint8), 7)
+    opening = cv2.morphologyEx(prediction.astype(np.uint8), cv2.MORPH_OPEN, np.ones((5, 5)))
+    closing = cv2.medianBlur(opening, 11)
 
     return closing
 
