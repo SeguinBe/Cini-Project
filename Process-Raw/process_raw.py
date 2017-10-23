@@ -8,6 +8,7 @@ from PIL import Image
 from rawkit.raw import Raw
 from glob import iglob
 import time
+import logging
 
 from tqdm import tqdm
 
@@ -25,27 +26,31 @@ skip_processed = args['skip_processed']
 # Getting raws folder and checking for existence #
 ##################################################
 
-load_directory = args['raws']
-if not os.path.exists(load_directory):
+input_directory = args['raws']
+if not os.path.exists(input_directory):
     print("Folder does not exist")
     exit(1)
 
-save_directory = args['destination']
-if not os.path.exists(save_directory):
-    os.makedirs(save_directory)
+output_directory = args['destination']
+if not os.path.exists(output_directory):
+    os.makedirs(output_directory)
 
-f = open(os.path.join(save_directory, "out-{}.log".format(str(time.time()))), 'w')
+logger = logging.getLogger('ProcessRaw')
+hdlr = logging.FileHandler(os.path.join(output_directory, "out-{}.log".format(str(time.time()))))
+formatter = logging.Formatter('%(asctime)s %(levelname)s - %(message)s')
+hdlr.setFormatter(formatter)
+logger.addHandler(hdlr)
+logger.setLevel(logging.DEBUG)
 
-###############
-# Funtion def #
-###############
+
 class File:
-    def __init__(self, path, save_path, check_md5=True,):
+    def __init__(self, path, save_path, check_md5=True):
         self.verify_md5 = check_md5
         self.path = path
         self.save_path = save_path
 
-def process_file(file):
+
+def process_file(file: File):
     """
     This function takes a file name of a raw image file with an extenstion .cr2 and saves
     a converted image in the defined save path povided to this script. The funcion will also verify the md5 hash
@@ -67,9 +72,10 @@ def process_file(file):
         if os.path.exists(file.save_path) and skip_processed:
             return file
         if file.verify_md5:
-            if not md5.check_md5(file.path, file.path.replace(".cr2", ".md5")):
-                f.write("{0} invalid md5\n".format(file.path))
-                f.flush()
+            if md5.check_md5(file.path, file.path.replace(".cr2", ".md5")):
+                logger.debug("{0} valid md5".format(file.path))
+            else:
+                logger.error("{0} invalid md5".format(file.path))
 
         with Raw(file.path) as raw_image:
             buffered_image = np.array(raw_image.to_buffer())
@@ -78,12 +84,10 @@ def process_file(file):
         
             image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
             image.save(file.save_path, format='jpeg', quality=90)
-            f.write("{0}\n".format(file.path))
-            f.flush()
+            logger.info("Done processing  {0}".format(file.path))
 
     except Exception as e:
-        f.write("{} excepted with error: {}\n".format(file.path, e))
-        f.flush()
+        logger.error("{} excepted with error: {}".format(file.path, e))
 
 
 #####################################
@@ -95,23 +99,16 @@ verify_md5 = args['md5']
 inputs = []
 all_results = []
 
-for file in tqdm(iglob(os.path.join(load_directory, '**/*recto.cr2'), recursive=True), desc="Indexing files"):
-    relative_path = file[len(load_directory):]
-    inputs.append(File(os.path.join(load_directory, relative_path),  os.path.join(save_directory, relative_path).replace('.cr2', '.jpg'), verify_md5))
+matching_filenames = os.path.join(input_directory, '**', '*recto.cr2')
+
+for file in tqdm(iglob(matching_filenames, recursive=True), desc="Indexing files"):
+    relative_path = file[len(input_directory):]
+    inputs.append(File(os.path.join(input_directory, relative_path), os.path.join(output_directory, relative_path).replace('.cr2', '.jpg'), verify_md5))
 
 
 ######################
 # Start main process #
 ######################
-
 with Pool(max_workers) as p:
     for simple_result in tqdm(p.imap(process_file, inputs, chunksize=5), total=len(inputs)):
         all_results.append(simple_result)
-
-
-#########################
-# Save the logs to file #
-#########################
-f.flush()
-f.close()
-
