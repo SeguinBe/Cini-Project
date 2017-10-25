@@ -87,7 +87,7 @@ def process_file(file: File):
             logger.info("Done processing  {0}".format(file.path))
 
     except Exception as e:
-        logger.error("{} excepted with error: {}".format(file.path, e))
+        logger.exception("{} excepted with error".format(file.path))
 
 
 #####################################
