@@ -82,8 +82,16 @@ def process_file(file: File):
             buffered_image = np.array(raw_image.to_buffer())
 
             os.makedirs(os.path.dirname(file.save_path), exist_ok=True)
-        
-            image = Image.frombytes('RGB', (raw_image.metadata.width, raw_image.metadata.height), buffered_image)
+
+            buffered_image = buffered_image.reshape((raw_image.metadata.height, raw_image.metadata.width, 3))
+            if 'verso' in file.path:
+                buffered_image = buffered_image.reshape((raw_image.metadata.width, raw_image.metadata.height, 3))
+                buffered_image = np.rot90(buffered_image, k=-1)
+            else:
+                buffered_image = buffered_image.reshape((raw_image.metadata.height, raw_image.metadata.width, 3))
+            image = Image.fromarray(buffered_image)
+            #image = Image.frombytes('RGB', (raw_image.metadata.height, raw_image.metadata.width), buffered_image)
+
             image.save(file.save_path, format='jpeg', quality=90)
             logger.info("Done processing  {0}".format(file.path))
 
