@@ -3,12 +3,26 @@ import numpy as np
 import cv2
 from google.cloud import vision
 from functools import total_ordering
+import matplotlib.pyplot as plt
 from PIL import Image
 import json
 from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
 
 _MAX_WIDTH = 2000
+
+AUTHOR_LABEL = 'Author'
+LOCATION_LABEL = 'City'
+INSTITUTION_LABEL = 'Institution'
+DESCRIPTION_LABEL = 'Description'
+COUNTRY_LABEL = 'Country'
+CINI_1_LABEL = 'CiniCollection'
+CINI_2_LABEL = 'CiniNumber'
+CINI_3_LABEL = 'CiniTime'
+REFERENCE_LABEL = 'Reference'
+FONDO_STAMP_LABEL = 'FondoStamp'
+ALL_LABELS = [AUTHOR_LABEL, LOCATION_LABEL, INSTITUTION_LABEL, DESCRIPTION_LABEL, COUNTRY_LABEL,
+CINI_1_LABEL, CINI_2_LABEL, CINI_3_LABEL, REFERENCE_LABEL, FONDO_STAMP_LABEL]
 
 
 def cut_text_section_and_resize(img, relative_height=0.28):
@@ -63,7 +77,7 @@ class Rectangle:
 
     def __lt__(self, other):
         c, o_c = self.center, other.center
-        return c[0] * 14 + c[1] < o_c[0] * 14 + o_c[1]
+        return c[0] * 20 + c[1] < o_c[0] * 20 + o_c[1]
 
     def __mul__(self, other):
         if isinstance(other, tuple):
@@ -135,6 +149,15 @@ class Rectangle:
         return [Rectangle.from_dict(d) for d in data]
 
 
+    _label_color = {k: 255*v[:3] for k,v in zip(ALL_LABELS, plt.cm.jet(np.arange(len(ALL_LABELS))/(len(ALL_LABELS)-1)))}
+    def draw(self, canvas, print_text=None):
+        cv2.rectangle(canvas, (self.x1, self.y1), (self.x2, self.y2), self._label_color.get(self.label, (255, 0, 0)), thickness=3)
+        if print_text=='text':
+            cv2.putText(canvas, self.text.replace('\n', '//'), (self.x1, self.y1 - 10), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 0))
+        elif print_text=='label':
+            cv2.putText(canvas, self.label, (self.x1, self.y1 - 10), cv2.FONT_HERSHEY_COMPLEX, 1, self._label_color[self.label])
+
+
 def _np_array_to_jpg_encoded(img):
     buffer = io.BytesIO()
     Image.fromarray(img).save(buffer, format="JPEG")
@@ -166,16 +189,7 @@ def words_to_fragments(word_list):
 
 
 FIRST_HORIZONTAL_LINE, SECOND_HORIZONTAL_LINE = 0.3, 0.8
-AUTHOR_LABEL = 'Author'
-LOCATION_LABEL = 'City'
-INSTITUTION_LABEL = 'Institution'
-DESCRIPTION_LABEL = 'Description'
-COUNTRY_LABEL = 'Country'
-CINI_1_LABEL = 'CiniCollection'
-CINI_2_LABEL = 'CiniNumber'
-CINI_3_LABEL = 'CiniTime'
-REFERENCE_LABEL = 'Reference'
-FONDO_STAMP_LABEL = 'FondoStamp'
+
 base_rectangles = [
     Rectangle(0, FIRST_HORIZONTAL_LINE, 0, 0.4, label=LOCATION_LABEL),
     Rectangle(0, FIRST_HORIZONTAL_LINE, 0.5, 0.85, label=AUTHOR_LABEL),

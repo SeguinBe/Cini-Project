@@ -18,6 +18,7 @@ ap.add_argument("-d", "--destination", required=True, help="Folder where the res
 ap.add_argument("-w", "--nbworkers", required=False, default='1', help="Number of workers for parallelization")
 ap.add_argument("-s", "--skip-processed", action='store_true', help="Skips already processed images")
 ap.add_argument("--md5", action='store_true', help="Flag for checking md5 or not")
+ap.add_argument("--verso", action='store_true', help="Flag for converting verso files as well")
 args = vars(ap.parse_args())
 
 skip_processed = args['skip_processed']
@@ -90,16 +91,19 @@ def process_file(file: File):
         logger.exception("{} excepted with error".format(file.path))
 
 
-#####################################
-# Setting params and load file names#
-#####################################
+######################################
+# Setting params and load file names #
+######################################
 
 max_workers = int(args["nbworkers"])
 verify_md5 = args['md5']
 inputs = []
 all_results = []
 
-matching_filenames = os.path.join(input_directory, '**', '*recto.cr2')
+if args['verso']:
+    matching_filenames = os.path.join(input_directory, '**', '*.cr2')
+else:
+    matching_filenames = os.path.join(input_directory, '**', '*recto.cr2')
 
 for file in tqdm(iglob(matching_filenames, recursive=True), desc="Indexing files"):
     relative_path = file[len(input_directory):]
