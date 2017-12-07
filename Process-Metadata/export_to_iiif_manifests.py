@@ -86,19 +86,27 @@ def get_metadata(folder: str):
     metadata = {
          r.label if r.label is not None else 'Unknown': r.text for r in fragments
     }
+    DEFAULT_DATE = '????'
     if AUTHOR_LABEL in metadata.keys():
         author = metadata[AUTHOR_LABEL]
         if author in MATCHING_DIR.keys():
             d = MATCHING_DIR[author]
-            metadata['AuthorAligned'] = d['author_corrected_name']
+            metadata['AuthorRaw'] = author
+            metadata[AUTHOR_LABEL] = d['author_corrected_name']
             if 'id' in d.keys():
                 metadata['AuthorId'] = d['id']
             if 'author_url' in d.keys():
                 metadata['AuthorURL'] = d['author_url']
             if 'begin_date' in d.keys():
-                metadata['DateRangeBegin'] = d['begin_date']
+                begin_date = str(d['begin_date'])
+            else:
+                begin_date = DEFAULT_DATE
             if 'end_date' in d.keys():
-                metadata['DateRangeEnd'] = d['end_date']
+                end_date = str(d['end_date'])
+            else:
+                end_date = DEFAULT_DATE
+            if begin_date != DEFAULT_DATE or end_date != DEFAULT_DATE:
+                metadata['DateRange'] = '{}-{}'.format(begin_date, end_date)
     return [
         {"label": k, "value": v} for k, v in metadata.items()
         ]
