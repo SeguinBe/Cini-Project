@@ -21,6 +21,7 @@ def get_sorted_image_folders(box_folder: str):
             return int(_id)
         if _id[:-1].isdigit():
             return int(_id[:-1]) + (ord(_id[-1])+1)/256
+        raise ValueError('Could not parse image number {} in box {}'.format(_id, box_folder))
     folders = glob('{}/*'.format(box_folder))
     # Filter non directories and elements which do not match the proper ordering
     folders = [f for f in folders if os.path.isdir(f) and _id_ordering(f.split('_')[-1]) is not None]

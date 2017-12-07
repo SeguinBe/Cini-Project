@@ -8,7 +8,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 import tensorflow as tf
 from doc_seg.loader import LoadedModel
-from traceback import print_exc
+from traceback import print_exc, format_exc
 import cv2
 
 from raw_scan import RawScan
@@ -150,6 +150,7 @@ def process_one(file):
 
         doc_info.logger.debug("Done!")
     except Exception as e:
+        print(format_exc())
         doc_info.logger.error(e)
 
 

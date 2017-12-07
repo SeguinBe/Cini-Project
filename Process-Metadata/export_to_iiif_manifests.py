@@ -1,30 +1,106 @@
 import argparse
 import os
 import json
-from text_extraction import Rectangle
+#from text_extraction import Rectangle
 from PIL import Image
 from glob import glob
 from tqdm import tqdm
 from collections import OrderedDict
-from export_to_dhcanvas import dhcanvas_url_from_full_id, get_sorted_image_folders, get_sorted_collection_folders
-from text_extraction import AUTHOR_LABEL, DESCRIPTION_LABEL
+import pickle
+import numpy as np
+#from export_to_dhcanvas import dhcanvas_url_from_full_id, get_sorted_image_folders, get_sorted_collection_folders
+
+AUTHOR_LABEL = 'Author'
+DESCRIPTION_LABEL = 'Description'
+MATCHING_DIR = dict()
 
 MANIFEST_BASE_URL = 'http://data.dhlab.epfl.ch/cini'
+MANIFEST_BASE_URL_CARDBOARD = 'http://data.dhlab.epfl.ch/cini_raw'
+CARDBOARD_MANIFEST = False
 BASE_IIIF_URL = 'http://dhlabsrv4.epfl.ch'
 CINI_LOGO_URL = 'http://www.cidim.it:8080/dwnld/bwbsc/image/241898/MARCHIO_LOGO.jpg'
 CINI_ATTRIBUTION = 'Fondazione Giorgio Cini'
 
 
+class Rectangle:
+    def __init__(self, y1, y2, x1, x2, text=None, label=None):
+        self.label = label
+        self.text = text
+        self.y1 = y1
+        self.y2 = y2
+        self.x1 = x1
+        self.x2 = x2
+        self.arr = np.array([y1, y2, x1, x2])
+
+    def __repr__(self):
+        return "Rect(y:{},{}|x:{},{}{}{})".format(self.y1, self.y2, self.x1, self.x2,
+                                                "|{}".format(repr(self.text)) if self.text is not None else "",
+                                                "|{}".format(repr(self.label)) if self.label is not None else "")
+    @classmethod
+    def from_dict(cls, input_dict):
+        return Rectangle(**input_dict)
+
+    @classmethod
+    def load_from_json(cls, filename):
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return [Rectangle.from_dict(d) for d in data]
+
+
+def get_sorted_image_folders(box_folder: str):
+    def _id_ordering(_id: str):
+        if _id.isdigit():
+            return int(_id)
+        if _id[:-1].isdigit():
+            return int(_id[:-1]) + (ord(_id[-1])+1)/256
+        raise ValueError('Could not parse image number {} in box {}'.format(_id, box_folder))
+    folders = glob('{}/*'.format(box_folder))
+    # Filter non directories and elements which do not match the proper ordering
+    folders = [f for f in folders if os.path.isdir(f) and _id_ordering(f.split('_')[-1]) is not None]
+    return sorted(folders, key=lambda n: _id_ordering(n.split('_')[-1]))
+
+
+def get_sorted_collection_folders(box_folder: str):
+    def _id_ordering(_id: str):
+        if _id.isdigit():
+            return int(_id)
+        if _id[:-1].isdigit():
+            return int(_id[:-1]) + (ord(_id[-1])+1)/256
+    folders = glob('{}/*'.format(box_folder))
+    # Filter non directories and elements which do not match the proper ordering
+    folders = [f for f in folders if os.path.isdir(f) and _id_ordering(f.split('/')[-1]) is not None]
+    return sorted(folders, key=lambda n: _id_ordering(n.split('/')[-1]))
+
+
 def get_replica_url(folder: str):
     box_id, element_id = folder.split('/')[-2:]
-    return '{}/iiif_replica/cini%2F{}%2F{}.jpg'.format(BASE_IIIF_URL, box_id, element_id)
+    if CARDBOARD_MANIFEST:
+        return '{}/iiif_cini/{}%2F{}.jpg'.format(BASE_IIIF_URL, box_id, element_id)
+    else:
+        return '{}/iiif_replica/cini%2F{}%2F{}.jpg'.format(BASE_IIIF_URL, box_id, element_id)
 
 
 def get_metadata(folder: str):
     ocr_path = os.path.join(folder, 'ocr_complete.json')
     fragments = Rectangle.load_from_json(ocr_path)
+    metadata = {
+         r.label if r.label is not None else 'Unknown': r.text for r in fragments
+    }
+    if AUTHOR_LABEL in metadata.keys():
+        author = metadata[AUTHOR_LABEL]
+        if author in MATCHING_DIR.keys():
+            d = MATCHING_DIR[author]
+            metadata['AuthorAligned'] = d['author_corrected_name']
+            if 'id' in d.keys():
+                metadata['AuthorId'] = d['id']
+            if 'author_url' in d.keys():
+                metadata['AuthorURL'] = d['author_url']
+            if 'begin_date' in d.keys():
+                metadata['DateRangeBegin'] = d['begin_date']
+            if 'end_date' in d.keys():
+                metadata['DateRangeEnd'] = d['end_date']
     return [
-        {"label": r.label if r.label is not None else 'Unknown', "value": r.text} for r in fragments
+        {"label": k, "value": v} for k, v in metadata.items()
         ]
 
 
@@ -41,7 +117,10 @@ def get_collection_url(box_id):
 
 
 def make_image_manifest(folder: str, sequence_number: int):
-    image_path = os.path.join(folder, 'image.jpg')
+    if not CARDBOARD_MANIFEST:
+        image_path = os.path.join(folder, 'image.jpg')
+    else:
+        image_path = os.path.join(folder, 'cardboard.jpg')
     ocr_path = os.path.join(folder, 'ocr_complete.json')
     if not (os.path.exists(image_path) and os.path.exists(ocr_path)):
         return None
@@ -93,7 +172,9 @@ def make_image_manifest(folder: str, sequence_number: int):
         manifest["attribution"] = CINI_ATTRIBUTION
         manifest["logo"] = CINI_LOGO_URL
 
-        manifest["related"] = dhcanvas_url_from_full_id(os.path.basename(folder), sequence_number)
+        #manifest["related"] = dhcanvas_url_from_full_id(os.path.basename(folder), sequence_number)
+        if not CARDBOARD_MANIFEST:
+            manifest["related"] = 'http://universalviewer.io/uv.html?manifest={}/{}'.format(MANIFEST_BASE_URL_CARDBOARD, manifest_path(box_id, manifest_id))
         manifest["within"] = collection_url
 
         manifest["sequences"] = [
@@ -186,17 +267,8 @@ def process_folder(input_folder: str, output_folder: str):
     return collection_manifest['@id']
 
 
-if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
-    ap.add_argument("-d", "--directory", required=True, help="Folder with the extracted cardboards")
-    ap.add_argument("-o", "--output-dir", required=True, help="Where to save the output")
-    args = vars(ap.parse_args())
-
-    input_dir = args['directory']
-    output_dir = args['output_dir']
-    os.makedirs(output_dir)
-
-    folders = get_sorted_collection_folders(args['directory'])
+def export(input_dir, output_dir):
+    folders = get_sorted_collection_folders(input_dir)
 
     collection_manifest_urls = []
     for folder in tqdm(folders):
@@ -218,3 +290,26 @@ if __name__ == '__main__':
         ]
 
     save_manifest(top_collection_manifest, output_dir)
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-i", "--image-directory", required=True, help="Folder with the extracted images")
+    ap.add_argument("-o", "--output-dir", required=True, help="Where to save the output")
+    args = vars(ap.parse_args())
+
+    with open('match_final.pkl', 'rb') as f:
+        MATCHING_DIR = pickle.load(f)
+
+    input_dir_images = args['image_directory']
+    output_dir = args['output_dir']
+
+    output_dir_images = os.path.join(output_dir, 'cini')
+    os.makedirs(output_dir_images, exist_ok=True)
+    export(input_dir_images, output_dir_images)
+
+    CARDBOARD_MANIFEST = True
+    MANIFEST_BASE_URL = MANIFEST_BASE_URL_CARDBOARD
+    output_dir_cardboards = os.path.join(output_dir, 'cini_raw')
+    os.makedirs(output_dir_cardboards, exist_ok=True)
+    export(input_dir_images, output_dir_cardboards)

@@ -11,6 +11,8 @@ A simple `cat <log-file> | grep ERROR` allows to see the files that were not pro
 
 The `--md5` flag to perform md5 checking is not mandatory.
 
+The `--verso` flag is to perform the conversion for verso files as well.
+
 
 ## problems left
 

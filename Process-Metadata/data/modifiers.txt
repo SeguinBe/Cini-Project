@@ -1,0 +1,30 @@
+modi di	0
+modo di	0
+copia da	0
+attr	1
+maniera di	0
+bottega di	1
+scuola dei	1
+scuola del	1
+scuola di	1
+cerchia di	1
+Progetto di	1
+Disegno di	1
+Cartone di	1
+Sotto la direzione di	1
+Su abbozzo di	1
+e collaboratori	1
+collaboratore di	1
+e aiuti	1
+e bottega	1
+seguace di	0
+imitatore di	0
+imitazione 	0
+Allievo di	0
+E scolari	1
+Ambito	1
+Derivazione di	0
+Derivato di	0
+Falso	0
+Famiglia	1
+?	1

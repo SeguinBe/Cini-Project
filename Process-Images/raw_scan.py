@@ -53,7 +53,7 @@ class RawScan:
             original_h, original_w = full_size_image.shape[:2]
             self.resized_raw_scan = cv2.resize(full_size_image, (target_w, target_h))
 
-            prediction = model.predict(self.resized_raw_scan[None, :, :, :])[0]
+            prediction = model.predict(self.resized_raw_scan[None, :, :, :], prediction_key='labels')[0]
             # Switch classes
             #lut = np.array([1, 0, 2], dtype=prediction.dtype)
             #prediction = lut[prediction]
@@ -68,6 +68,7 @@ class RawScan:
         with CatchTime('Contour extraction'):
             _, contours, hierarchy = cv2.findContours(cardboard_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         cardboard_contour = np.concatenate(contours)  # contours[np.argmax([cv2.contourArea(c) for c in contours])]
+        #cardboard_contour = max(contours, key=cv2.contourArea)
         if do_unwarp:
             self.p, self.center_x, self.center_y = unwarp.uwrap(self.prediction)
             self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape),
@@ -90,7 +91,9 @@ class RawScan:
             image_prediction = mask * image_prediction
             image_prediction = unwarp.get_cleaned_prediction(image_prediction)
             _, contours, hierarchy = cv2.findContours(image_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            self.image_rectangle = cv2.minAreaRect(np.concatenate(contours))
+            # Take the biggest contour
+            self.image_rectangle = cv2.minAreaRect(max(contours, key=cv2.contourArea))
+            #self.image_rectangle = cv2.minAreaRect(np.concatenate(contours))
             self.cropped_image = self.extract_minAreaRect(self.warped_image, self.image_rectangle,
                                                           scale=1/self.prediction_scale)
 

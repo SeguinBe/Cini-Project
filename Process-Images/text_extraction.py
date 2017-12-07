@@ -52,24 +52,44 @@ class Rectangle:
 
     @classmethod
     def from_google_annotation(cls, annotation):
-        coords = [(v.y_coordinate, v.x_coordinate) for v in annotation.bounds.vertices]
+        coords = [(v.y, v.x) for v in annotation.bounding_poly.vertices]
         x_coords, y_coords = [v[1] for v in coords], [v[0] for v in coords]
         return Rectangle(min(y_coords), max(y_coords), min(x_coords), max(x_coords), annotation.description)
 
     @classmethod
     def merge_rectangles(cls, rectangles, line_threshold=20):
-        ordained_rectangles = sorted(rectangles)
+        to_be_read = list(rectangles)
+        current_rectangle = None
         full_text = ''
-        last_y = None
-        for r in ordained_rectangles:
-            new_y = r.y2
-            if last_y is not None:
-                if new_y - last_y >= line_threshold:
-                    full_text += '\n'
-                else:
-                    full_text += ' '
-            last_y = new_y
-            full_text += r.text
+        while len(to_be_read) > 0:
+            next_line = False
+            if current_rectangle is None:
+                current_rectangle = min(to_be_read)
+            else:
+                current_rectangle = min(filter(current_rectangle.is_next, to_be_read),
+                                        key=current_rectangle.dist_to_rect,
+                                        default=None)
+                if current_rectangle is None:
+                    current_rectangle = min(to_be_read)
+                    next_line = True
+            to_be_read.remove(current_rectangle)
+            if next_line:
+                full_text += '\n'
+            else:
+                full_text += ' '
+            full_text += current_rectangle.text
+
+        #full_text = ''
+        #last_y = None
+        #for r in ordained_rectangles:
+        #    new_y = r.y2
+        #    if last_y is not None:
+        #        if new_y - last_y >= line_threshold:
+        #            full_text += '\n'
+        #        else:
+        #            full_text += ' '
+        #    last_y = new_y
+        #    full_text += r.text
 
         return Rectangle(min([r.y1 for r in rectangles]), max([r.y2 for r in rectangles]),
                          min([r.x1 for r in rectangles]), max([r.x2 for r in rectangles]),
@@ -109,7 +129,25 @@ class Rectangle:
         # WARNING this assumes rectangles are not intersecting with each other
         min_y_diff = np.min(np.abs(self.arr[None, :2] - rect.arr[:2, None]))
         min_x_diff = np.min(np.abs(self.arr[None, 2:] - rect.arr[2:, None]))
-        return np.sqrt(min_y_diff ** 2 + min_x_diff ** 2)
+        return np.sqrt(min_y_diff ** 2 + min_x_diff ** 2 / skewing)
+
+    def is_next(self, rect):
+        # WARNING this assumes rectangles are not intersecting with each other
+
+        vertical_intersection = max(self.y1, rect.y1) < min(self.y2, rect.y2)
+        to_the_rigth = self.x2 < rect.x1
+        return vertical_intersection and to_the_rigth
+
+        # end_point = ((self.y2+self.y1)/2, self.x2)
+        # next_point = ((rect.y2+rect.y1)/2, rect.x1)
+        #alpha = np.arctan2(next_point[0]-end_point[0], next_point[1]-end_point[1])
+        #if alpha < -  np.pi:
+        #    alpha += 2*np.pi
+        #print(alpha)
+        #if -0.3 < alpha < 0.3:
+        #    return True
+        #else:
+        #    return False
 
     def weighted_dist_to_pt(self, pt):
         c_y, c_x = self.center
@@ -166,11 +204,17 @@ def _np_array_to_jpg_encoded(img):
 
 def detect_text(img):
     # Instantiates a client
-    vision_client = vision.Client()
-    g_img = vision_client.image(content=_np_array_to_jpg_encoded(img))
-    result = g_img.detect_text(limit=200)
+    client = vision.ImageAnnotatorClient()
+    g_img = vision.types.Image(content=_np_array_to_jpg_encoded(img))
+    r = vision.types.AnnotateImageRequest(image=g_img,
+                                          features=[vision.types.Feature(type=vision.types.Feature.TEXT_DETECTION)],
+                                          image_context=vision.types.ImageContext(language_hints=['it', 'fr', 'en', 'de']))
+    result = client.annotate_image(r)
+    # vision_client = vision.Client()
+    # g_img = vision_client.image(content=_np_array_to_jpg_encoded(img))
+    # result = g_img.detect_text(limit=200)
     fm_list = []
-    for anno in result:  # Discard the first result because it is the concatenated version
+    for anno in result.text_annotations:  # Discard the first result because it is the concatenated version
         fm_list.append(Rectangle.from_google_annotation(anno))
     return fm_list
 
