@@ -12,22 +12,7 @@ python pipeline.py -r /mnt/cluster-nas/benoit/cini_full_images/ -m /scratch/beno
 python pipeline_text.py -d /scratch/benoit/cini_processed/ -w 8 -s -l /home/seguin/cini_text.log
 ```
 
-- exports (images, dhcanvas, iiif manifests)
-
-
-
-## IIIF Export
-
-Data should go to `/srv/http/epfl.ch/dhlab/data/cini` on seguin@cdh-dhlabpc4.epfl.ch.
-Then it is accessible from http://data.dhlab.epfl.ch/cini
-
-## DHCanvas Export (deactivated)
-
-Data should be imported by Orlin.
-Elements are accessible from predictable names: http://cini.dhlab.epfl.ch/page/view/{collection_uuid}/p{page_number}.
-**WARNING** : some numbers are reused 1A_345 and 1A_345A for instance....
-For instance 1A_345 -> page_number=345 collection_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, 'DHCANVAS_CINI_{}'.format('1A')))
-
+- exports images
 
 ## Export images :
 
@@ -37,3 +22,10 @@ python export_images.py
     -i /home/seguin/NAS-home/datasets/cini/
     -c /mnt/cluster-nas/benoit/cini-cardboards
 ```
+
+## DHCanvas Export (deactivated)
+
+Data should be imported by Orlin.
+Elements are accessible from predictable names: http://cini.dhlab.epfl.ch/page/view/{collection_uuid}/p{page_number}.
+**WARNING** : some numbers are reused 1A_345 and 1A_345A for instance....
+For instance 1A_345 -> page_number=345 collection_uuid=str(uuid.uuid5(uuid.NAMESPACE_URL, 'DHCANVAS_CINI_{}'.format('1A')))

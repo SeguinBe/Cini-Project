@@ -78,6 +78,12 @@ if __name__ == '__main__':
     # Gather everything
     all_entities = {**entities, **unknown_entities}
     id_name_pairs = [(_id, n) for _id, e in all_entities.items() for n in set(e['alternateLabels']+[e['label']])]
+    additional_pairs = []
+    for _id, n in id_name_pairs:
+        for to_be_replaced, replacement in read_pairs_list('data/generative_substitutions.txt'):
+            if to_be_replaced in n:
+                additional_pairs.append((_id, n.replace(to_be_replaced, replacement)))
+    id_name_pairs.extend(additional_pairs)
     print("Generated {} possible id-label pairs".format(len(id_name_pairs)))
 
     # Read names

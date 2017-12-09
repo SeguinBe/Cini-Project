@@ -3,15 +3,14 @@
 Project Structure
 -----------------
 
-### Process-Raw:
+### Process-Raw
 
-* `md5.py`: Contains functions to verify the md5 has
-* `process_raw.py`: Pipline that proceses Raw files and saves them as jpg
+Batch convert the `.cr2` files to 90% quality `.jpg`
 
-### Process-Images:
+### Process-Images
 
-* to be updated
+Process the recto raw scans to extract the areas of interest and the metadata.
 
 ### Process-Metadata
 
-
+Align the author metadata with the ULAN repository to extract information.
