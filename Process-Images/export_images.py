@@ -3,7 +3,7 @@ import os
 from PIL import Image
 import uuid
 import shutil
-from glob import glob
+from glob import glob, iglob
 import argparse
 from tqdm import tqdm
 import json
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     os.makedirs(cardboards_dir, exist_ok=True)
     os.makedirs(images_dir, exist_ok=True)
 
-    folders = glob('{}/**/'.format(input_dir), recursive=True)
+    folders = list(tqdm(iglob('{}/**/'.format(input_dir), recursive=True), desc='Counting files'))
     folders = [os.path.relpath(f, input_dir) for f in folders if os.path.isdir(f)]
 
     for folder in tqdm(folders):

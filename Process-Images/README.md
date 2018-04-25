@@ -3,7 +3,8 @@
 - pipeline.py (cardboard + image extraction)
 
 ```
-python pipeline.py -r /mnt/cluster-nas/benoit/cini_full_images/ -m /scratch/benoit/tensorboard_docseg/vgg_test_3/export -d /scratch/benoit/cini_processed_3/ -l /home/seguin/cini_image_extraction_3.log --skip-processed -g 0 -w 3
+EXPORT OMP_NUM_THREADS=4
+python pipeline.py -r /mnt/project_cini/jpg/ -m /scratch/benoit/tensorboard_docseg/vgg_test_3/export -d /mnt/cluster-nas/benoit/cini_processed -l /home/seguin/cini_image_extraction_final.log --skip-processed -g 1 -w 3
 ```
 
 - pipeline_text.py (OCR + label association)
@@ -18,9 +19,9 @@ python pipeline_text.py -d /scratch/benoit/cini_processed/ -w 8 -s -l /home/segu
 
 ```
 python export_images.py
-    -d /scratch/benoit/cini_processed/
-    -i /home/seguin/NAS-home/datasets/cini/
-    -c /mnt/cluster-nas/benoit/cini-cardboards
+     -d /mnt/cluster-nas/benoit/cini_processed/
+          -i ~/project_replica/datasets/cini
+               -c ~/project_cini/cardboards
 ```
 
 ## DHCanvas Export (deactivated)

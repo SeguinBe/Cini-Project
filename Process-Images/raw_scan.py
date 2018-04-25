@@ -45,30 +45,53 @@ class RawScan:
         else:
             self.output_filename = shared.VERSO_CARDBOARD_DEFAULT_FILENAME
 
-    def crop_cardboard(self, model, do_unwarp=False, crop_image=True):
+    def crop_cardboard(self, model, do_unwarp=False):
         with CatchTime('Resizing + Predicion'):
             # Performs the crop
-            target_h, target_w = (688, 1024)
             full_size_image = self.raw_scan
             original_h, original_w = full_size_image.shape[:2]
-            self.resized_raw_scan = cv2.resize(full_size_image, (target_w, target_h))
+            #self.resized_raw_scan = cv2.resize(full_size_image, (target_w, target_h))
 
             prediction = model.predict(self.resized_raw_scan[None, :, :, :], prediction_key='labels')[0]
-            # Switch classes
-            #lut = np.array([1, 0, 2], dtype=prediction.dtype)
-            #prediction = lut[prediction]
-            prediction[prediction == 0] = 3
-            prediction[prediction == 1] = 0
-            prediction[prediction == 3] = 1
             self.prediction = prediction
-            self.prediction_scale = target_h/original_h
+            self.prediction_scale = prediction.shape[0]/original_h
 
-        with CatchTime('Cleaning prediction'):
-            cardboard_prediction = unwarp.get_cleaned_prediction(prediction == 1)
-        with CatchTime('Contour extraction'):
-            _, contours, hierarchy = cv2.findContours(cardboard_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        # class 0 -> cardboard
+        # class 1 -> background
+        # class 2 -> photograph
+
+        cardboard_prediction = unwarp.get_cleaned_prediction((prediction == 0).astype(np.uint8))
+        _, contours, hierarchy = cv2.findContours(cardboard_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         cardboard_contour = np.concatenate(contours)  # contours[np.argmax([cv2.contourArea(c) for c in contours])]
-        #cardboard_contour = max(contours, key=cv2.contourArea)
+        cardboard_rectangle = cv2.minAreaRect(cardboard_contour)
+        # If extracted cardboard too small compared to scan size, get cardboard+image prediction
+        if cv2.contourArea(cv2.boxPoints(cardboard_rectangle)) < 0.20 * cardboard_prediction.size:
+            cardboard_prediction = unwarp.get_cleaned_prediction(
+                ((prediction == 0) | (prediction == 2)).astype(np.uint8))
+            _, contours, hierarchy = cv2.findContours(cardboard_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+            cardboard_contour = np.concatenate(contours)  # contours[np.argmax([cv2.contourArea(c) for c in contours])]
+            cardboard_rectangle = cv2.minAreaRect(cardboard_contour)
+
+        image_prediction = (prediction == 2).astype(np.uint8)
+        # Force the image prediction to be inside the extracted cardboard
+        mask = np.zeros_like(image_prediction)
+        cv2.fillConvexPoly(mask, cv2.boxPoints(cardboard_rectangle).astype(np.int32), 1)
+        image_prediction = mask * image_prediction
+        eroded_mask = cv2.erode(mask, np.ones((20, 20)))
+        image_prediction = image_prediction | (~cardboard_prediction & eroded_mask)
+
+        image_prediction = unwarp.get_cleaned_prediction(image_prediction)
+        _, contours, hierarchy = cv2.findContours(image_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        # Take the biggest contour or two biggest if similar size (two images in the page)
+        image_contour = contours[0] if len(contours) == 1 or (
+                    cv2.contourArea(contours[0]) > 0.5 * cv2.contourArea(contours[1])) \
+            else np.concatenate(contours[0:2])
+        image_rectangle = cv2.minAreaRect(image_contour)
+
+        self.cardboard_rectangle = cardboard_rectangle
+        self.image_rectangle = image_rectangle
+
         if do_unwarp:
             self.p, self.center_x, self.center_y = unwarp.uwrap(self.prediction)
             self.prediction = map_coordinates(self.prediction, warp_coords(self.transform, self.prediction.shape),
@@ -78,30 +101,15 @@ class RawScan:
         else:
             self.warped_image = full_size_image
 
-        with CatchTime('Cardboard cropping'):
-            self.cardboard_rectangle = cv2.minAreaRect(cardboard_contour)
-            self.cropped_cardboard = self.extract_minAreaRect(self.warped_image, self.cardboard_rectangle,
+        self.cropped_cardboard = self.extract_minAreaRect(self.warped_image, self.cardboard_rectangle,
                                                           scale=1/self.prediction_scale)
-
-        if crop_image:
-            image_prediction = (self.prediction == 2).astype(np.uint8)
-            # Force the image prediction to be inside the extracted cardboard
-            mask = np.zeros_like(image_prediction)
-            cv2.fillConvexPoly(mask, cv2.boxPoints(self.cardboard_rectangle).astype(np.int32), 1)
-            image_prediction = mask * image_prediction
-            image_prediction = unwarp.get_cleaned_prediction(image_prediction)
-            _, contours, hierarchy = cv2.findContours(image_prediction, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            # Take the biggest contour
-            self.image_rectangle = cv2.minAreaRect(max(contours, key=cv2.contourArea))
-            #self.image_rectangle = cv2.minAreaRect(np.concatenate(contours))
-            self.cropped_image = self.extract_minAreaRect(self.warped_image, self.image_rectangle,
-                                                          scale=1/self.prediction_scale)
+        self.cropped_image = self.extract_minAreaRect(self.warped_image, self.image_rectangle,
+                                                      scale=1 / self.prediction_scale)
 
         h, w = self.cropped_cardboard.shape[:2]
         if h < w:
             self.cropped_cardboard = self.cropped_cardboard.transpose(1, 0, 2)[::-1]
-            if crop_image:
-                self.cropped_image = self.cropped_image.transpose(1, 0, 2)[::-1]
+            self.cropped_image = self.cropped_image.transpose(1, 0, 2)[::-1]
             self.document_info.logger.info('Rotated the cardboard')
 
         # Performs the checks
@@ -184,7 +192,7 @@ class RawScan:
         output = self.resized_raw_scan.copy().astype(np.uint8)
         cv2.polylines(output, cv2.boxPoints(self.cardboard_rectangle).astype(np.int32)[None], True, (255, 0, 0), 4)
         cv2.polylines(output, cv2.boxPoints(self.image_rectangle).astype(np.int32)[None], True, (0, 0, 255), 4)
-        Image.fromarray(output).save(path)
+        utils.save_image(path, output)
 
     @staticmethod
     def _validate_width(width):

@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 import shared
 from base import DocumentInfo
+import utils
 
 
 class ExtractedImage:
@@ -21,6 +22,5 @@ class ExtractedImage:
         if path is None:
             self.document_info.check_output_folder()
             path = os.path.join(self.document_info.output_folder, shared.PREDICTION_CARDBOARD_DEFAULT_FILENAME)
-        im = Image.fromarray(self._image.astype(np.uint8))
-        im.save(path, quality=90)
+        utils.save_image(path, self._image)
 

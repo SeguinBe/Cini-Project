@@ -5,6 +5,7 @@ from PIL import Image
 import numpy as np
 import shared
 from base import DocumentInfo
+import utils
 
 
 class RectoCardboard:
@@ -24,8 +25,7 @@ class RectoCardboard:
         if path is None:
             self.document_info.check_output_folder()
             path = os.path.join(self.document_info.output_folder, shared.IMAGE_DEFAULT_FILENAME)
-        im = Image.fromarray(self.cardboard.astype(np.uint8))
-        im.save(path, quality=90)
+        utils.save_image(path, self.cardboard)
 
     @staticmethod
     def _validate_image_section(x, page_width):

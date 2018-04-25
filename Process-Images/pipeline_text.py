@@ -3,12 +3,14 @@ import glob
 import os.path
 from tqdm import tqdm
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from multiprocessing import Pool
 from base import DocumentInfo
 import numpy as np
 from PIL import Image
 from text_extraction import Rectangle, cut_text_section_and_resize, detect_text, words_to_fragments,\
     label_fragments, rescale_fragments
+from itertools import islice
 
 ap = argparse.ArgumentParser()
 ap.add_argument("-d", "--directory", required=True, help="Folder with the extracted cardboards")
@@ -22,10 +24,11 @@ skip_processed = args['skip_processed']
 force_ocr = args['force_google_ocr']
 
 dir_path = args['directory']
-cardboard_files = glob.glob('{}/**/cardboard.jpg'.format(dir_path), recursive=True)
+#cardboard_files = list(tqdm(glob.iglob('{}/**/cardboard.jpg'.format(dir_path), recursive=True)))
+cardboard_files = glob.iglob('{}/**/cardboard.jpg'.format(dir_path), recursive=True)
 
 
-pbar = tqdm(total=len(cardboard_files))
+pbar = tqdm()#total=len(cardboard_files))
 def monitor_finish(fn):
     def _fn(*args, **kwargs):
         r = fn(*args, **kwargs)
@@ -34,7 +37,7 @@ def monitor_finish(fn):
     return _fn
 
 
-@monitor_finish
+#@monitor_finish
 def process_one(file):
     rel_dir = os.path.dirname(file)
     base_path = os.path.split(rel_dir)[-1]
@@ -75,9 +78,22 @@ fhandler.setFormatter(formatter)
 logger.addHandler(fhandler)
 logger.setLevel(logging.DEBUG)
 
+
+def split_every(n, iterable):
+    i = iter(iterable)
+    piece = list(islice(i, n))
+    while piece:
+        yield piece
+        piece = list(islice(i, n))
+
+
 if nb_workers > 1:
-    with ThreadPoolExecutor(nb_workers) as e:
-        e.map(process_one, cardboard_files)
+    with Pool(nb_workers) as p:
+        for simple_result in tqdm(p.imap(process_one, cardboard_files, chunksize=50)):
+            pass
+    #for chunk in split_every(2000, cardboard_files):
+    #    with ProcessPoolExecutor(nb_workers) as e:
+    #        e.map(process_one, chunk, chunksize=20)
 else:
-    for f in cardboard_files:
+    for f in tqdm(cardboard_files):
         process_one(f)

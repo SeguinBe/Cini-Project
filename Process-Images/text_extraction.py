@@ -8,8 +8,10 @@ from PIL import Image
 import json
 from sklearn.cluster import DBSCAN
 from scipy.optimize import linear_sum_assignment
+from typing import List
 
 _MAX_WIDTH = 2000
+_POSSIBLE_HEADER_HEIGHTS = [310, 520, 590]
 
 AUTHOR_LABEL = 'Author'
 LOCATION_LABEL = 'City'
@@ -78,6 +80,7 @@ class Rectangle:
             else:
                 full_text += ' '
             full_text += current_rectangle.text
+        full_text = full_text.strip()
 
         #full_text = ''
         #last_y = None
@@ -127,8 +130,10 @@ class Rectangle:
 
     def dist_to_rect(self, rect, skewing=1.0):
         # WARNING this assumes rectangles are not intersecting with each other
-        min_y_diff = np.min(np.abs(self.arr[None, :2] - rect.arr[:2, None]))
-        min_x_diff = np.min(np.abs(self.arr[None, 2:] - rect.arr[2:, None]))
+        min_y_diff = max(self.y1-rect.y2, rect.y1-self.y2, 0)
+        min_x_diff = max(self.x1-rect.x2, rect.x1-self.x2, 0)
+        #min_y_diff = np.min(np.abs(self.arr[None, :2] - rect.arr[:2, None]))
+        #min_x_diff = np.min(np.abs(self.arr[None, 2:] - rect.arr[2:, None]))
         return np.sqrt(min_y_diff ** 2 + min_x_diff ** 2 / skewing)
 
     def is_next(self, rect):
@@ -178,7 +183,7 @@ class Rectangle:
         else:
             data = rectangles.to_dict()
         with open(filename, 'w') as f:
-            json.dump(data, f)
+            json.dump(data, f, indent=2)
 
     @classmethod
     def load_from_json(cls, filename):
@@ -186,13 +191,13 @@ class Rectangle:
             data = json.load(f)
         return [Rectangle.from_dict(d) for d in data]
 
-
     _label_color = {k: 255*v[:3] for k,v in zip(ALL_LABELS, plt.cm.jet(np.arange(len(ALL_LABELS))/(len(ALL_LABELS)-1)))}
+    _label_color[None] = np.ones(3)*128
     def draw(self, canvas, print_text=None):
         cv2.rectangle(canvas, (self.x1, self.y1), (self.x2, self.y2), self._label_color.get(self.label, (255, 0, 0)), thickness=3)
-        if print_text=='text':
+        if print_text == 'text':
             cv2.putText(canvas, self.text.replace('\n', '//'), (self.x1, self.y1 - 10), cv2.FONT_HERSHEY_COMPLEX, 1, (255, 0, 0))
-        elif print_text=='label':
+        elif print_text == 'label':
             cv2.putText(canvas, self.label, (self.x1, self.y1 - 10), cv2.FONT_HERSHEY_COMPLEX, 1, self._label_color[self.label])
 
 
@@ -200,6 +205,16 @@ def _np_array_to_jpg_encoded(img):
     buffer = io.BytesIO()
     Image.fromarray(img).save(buffer, format="JPEG")
     return buffer.getvalue()
+
+
+def error_assignments(rects: List[Rectangle], gt_rects: List[Rectangle]) -> int:
+    errors = 0
+    for r in rects:
+        # Find match
+        m = min(gt_rects, key=lambda g_r: g_r.dist_to_rect(r))
+        if r.label != m.label:
+            errors += 1
+    return errors
 
 
 def detect_text(img):
@@ -224,7 +239,7 @@ def words_to_fragments(word_list):
     for i, r1 in enumerate(word_list):
         for j, r2 in enumerate(word_list):
             X[i, j] = r1.dist_to_rect(r2)
-    cluster_inds = DBSCAN(eps=100, metric="precomputed", min_samples=1).fit_predict(X)
+    cluster_inds = DBSCAN(eps=50, metric="precomputed", min_samples=1).fit_predict(X)
     n_clusters = np.max(cluster_inds) + 1
     fragments = []
     for ind_cluster in range(n_clusters):
@@ -253,16 +268,20 @@ optional_rectangles = [
 
 
 def assign_labels(rectangles, reference_rectangles):
+    if len(rectangles) > len(reference_rectangles):
+        return None, np.inf
     X = np.zeros((len(rectangles), len(reference_rectangles)))
     for i, r in enumerate(rectangles):
         for j, t_r in enumerate(reference_rectangles):
-            X[i,j] = t_r.weighted_dist_to_pt(r.center)
+            X[i, j] = t_r.weighted_dist_to_pt(r.center)
 
     assignment = linear_sum_assignment(X)
     output = [r.copy() for r in rectangles]
+    score = 0
     for i, j in zip(*assignment):
         output[i].label = reference_rectangles[j].label
-    return output
+        score += X[i, j]
+    return output, score
 
 
 def has_author_and_description(labelled_rects):
@@ -276,17 +295,38 @@ def has_author_and_description(labelled_rects):
 
 
 def label_fragments(fragments):
+    candidate_layouts = [
+        (base_rectangles + third_line_rectangle + optional_rectangles, 1.05),
+        (base_rectangles + third_line_rectangle, 1.05),
+        #(base_rectangles, SECOND_HORIZONTAL_LINE+0.5),
+        #(base_rectangles + optional_rectangles, SECOND_HORIZONTAL_LINE+0.5)
+    ]
+    target_rectangles = base_rectangles + third_line_rectangle + optional_rectangles
+    max_y = max([r.y2 for r in fragments])
+    results = []
+    for h in _POSSIBLE_HEADER_HEIGHTS:
+        results.append(assign_labels(fragments, [r*(h, _MAX_WIDTH) for r in target_rectangles]))
+
+    assigned_rectangles, score = min(results, key=lambda s: s[1])
+
+    assert assigned_rectangles is not None
+    return assigned_rectangles
+
+
+def label_fragments_old(fragments):
     max_y = max([r.y2 for r in fragments])
     target_rectangles = base_rectangles + third_line_rectangle + optional_rectangles
     target_rectangles = [r*(max_y*1.05, _MAX_WIDTH) for r in target_rectangles]
-    assigned_rectangles = assign_labels(fragments, target_rectangles)
-    if not has_author_and_description(assigned_rectangles):
+    assigned_rectangles, _ = assign_labels(fragments, target_rectangles)
+    if not has_author_and_description(assigned_rectangles) and False:
         target_rectangles = base_rectangles + third_line_rectangle
         target_rectangles = [r*(max_y*1.05, _MAX_WIDTH) for r in target_rectangles]
-        assigned_rectangles = assign_labels(fragments, target_rectangles)
-        if not has_author_and_description(assigned_rectangles):
+        assigned_rectangles, _ = assign_labels(fragments, target_rectangles)
+        if not has_author_and_description(assigned_rectangles) and False:
             # Assume only 2 lines of elements
             target_rectangles = base_rectangles
             target_rectangles = [r*(max_y*(SECOND_HORIZONTAL_LINE+0.5), _MAX_WIDTH) for r in target_rectangles]
-            assigned_rectangles = assign_labels(fragments, target_rectangles)
+            assigned_rectangles, _ = assign_labels(fragments, target_rectangles)
+
+    assert assigned_rectangles is not None
     return assigned_rectangles

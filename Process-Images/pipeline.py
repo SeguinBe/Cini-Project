@@ -7,9 +7,11 @@ from tqdm import tqdm
 import logging
 from concurrent.futures import ThreadPoolExecutor
 import tensorflow as tf
-from doc_seg.loader import LoadedModel
+from dh_segment.loader import LoadedModel
 from traceback import print_exc, format_exc
 import cv2
+from random import shuffle
+from itertools import islice
 
 from raw_scan import RawScan
 from base import *
@@ -43,6 +45,7 @@ if not raws_folder.exists():
     raise Exception("Raws files not found under %s" % raws_folder)
 raws_folder = raws_folder.resolve()
 raw_files = glob.glob('{}/**/*.jpg'.format(raws_folder), recursive=True)
+shuffle(raw_files)
 # if raws_folder.is_dir():
 #     raw_files = glob.glob('{}/**/*.jpg'.format(raws_folder), recursive=True)
 # else:
@@ -66,9 +69,9 @@ destination_folder = destination_folder.resolve()
 # Loading the TF model #
 ########################
 model_path = args['model']
-gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.3, visible_device_list=args['gpu'])
+gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, visible_device_list=args['gpu'])
 with tf.Session(config=tf.ConfigProto(gpu_options=gpu_options)).as_default():
-    m = LoadedModel(model_path)
+    m = LoadedModel(model_path, predict_mode='image')
 print("Got Model")
 
 ##########################
@@ -108,7 +111,8 @@ def process_one(file):
             os.makedirs(str(current_folder))
 
         if skip_processed and os.path.exists(str(current_folder / 'cardboard.jpg')) \
-                and os.path.exists(str(current_folder / 'image.jpg')):
+                and os.path.exists(str(current_folder / 'image.jpg')) \
+                and os.path.exists(str(current_folder / 'extraction.jpg')):
             return
 
         ####################
@@ -139,8 +143,6 @@ def process_one(file):
             recto_raw_scan.crop_cardboard(m)
 
         with CatchTime('Saving files'):
-            recto_raw_scan.save_prediction(str(current_folder / 'prediction.jpg'))
-            recto_raw_scan.save_extraction(str(current_folder / 'extraction.jpg'))
 
             cardboard = recto_raw_scan.get_cardboard()
             cardboard.save_image(str(current_folder / 'cardboard.jpg'))
@@ -148,7 +150,11 @@ def process_one(file):
             extracted_image = recto_raw_scan.get_image()
             extracted_image.save_image(str(current_folder / 'image.jpg'))
 
+            recto_raw_scan.save_prediction(str(current_folder / 'prediction.jpg'))
+            recto_raw_scan.save_extraction(str(current_folder / 'extraction.jpg'))
+
         doc_info.logger.debug("Done!")
+
     except Exception as e:
         print(format_exc())
         doc_info.logger.error(e)
@@ -166,6 +172,15 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 fhandler.setFormatter(formatter)
 logger.addHandler(fhandler)
 logger.setLevel(logging.DEBUG)
+
+
+def split_every(n, iterable):
+    i = iter(iterable)
+    piece = list(islice(i, n))
+    while piece:
+        yield piece
+        piece = list(islice(i, n))
+
 
 if nb_workers > 1:
     with ThreadPoolExecutor(nb_workers) as e:

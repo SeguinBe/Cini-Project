@@ -90,7 +90,7 @@ def process_file(file: File):
             else:
                 buffered_image = buffered_image.reshape((raw_image.metadata.height, raw_image.metadata.width, 3))
             image = Image.fromarray(buffered_image)
-            #image = Image.frombytes('RGB', (raw_image.metadata.height, raw_image.metadata.width), buffered_image)
+            # image = Image.frombytes('RGB', (raw_image.metadata.height, raw_image.metadata.width), buffered_image)
 
             image.save(file.save_path, format='jpeg', quality=90)
             logger.info("Done processing  {0}".format(file.path))
@@ -115,8 +115,8 @@ else:
 
 for file in tqdm(iglob(matching_filenames, recursive=True), desc="Indexing files"):
     relative_path = file[len(input_directory):]
-    inputs.append(File(os.path.join(input_directory, relative_path), os.path.join(output_directory, relative_path).replace('.cr2', '.jpg'), verify_md5))
-
+    inputs.append(File(os.path.join(input_directory, relative_path),
+                       os.path.join(output_directory, relative_path).replace('.cr2', '.jpg'), verify_md5))
 
 ######################
 # Start main process #
